@@ -9,6 +9,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func runAccumulatedTests(f func() int) float64 {
+	acc := 0.
+	attempts := 128
+	for i := 0; i < attempts; i++ {
+		acc += float64(f()) / float64(attempts)
+	}
+	return acc
+}
+
 func TestHealthcheckManager(t *testing.T) {
 	prometheus.DefaultRegisterer = prometheus.NewRegistry()
 
@@ -43,15 +52,22 @@ func TestHealthcheckManager(t *testing.T) {
 	ctx := context.TODO()
 	go manager.Start(ctx)
 
-	nextIdx := manager.GetNextHealthyTargetIndex()
-	assert.Zero(t, nextIdx)
+	acc := runAccumulatedTests(func() int {
+		return manager.GetNextHealthyTargetIndex()
+	})
+	t.Logf("Average index when selecting from 2 options is %f", acc)
+	// Random node selection must be aroung 50/50
+	assert.InDelta(t, .5, acc, .25)
 
 	time.Sleep(1 * time.Second)
 
 	manager.TaintTarget("Primary")
 
-	nextIdx = manager.GetNextHealthyTargetIndex()
-	assert.Equal(t, 1, nextIdx)
+	acc = runAccumulatedTests(func() int {
+		return manager.GetNextHealthyTargetIndex()
+	})
+	t.Logf("Average index when selecting from 1 option is %f", acc)
+	assert.Equal(t, 1., acc)
 
 	manager.Stop(ctx)
 }
@@ -63,6 +79,14 @@ func TestGetNextHealthyTargetIndexExcluding(t *testing.T) {
 		Targets: []TargetConfig{
 			{
 				Name: "Primary",
+				Connection: TargetConfigConnection{
+					HTTP: TargetConnectionHTTP{
+						URL: "https://cloudflare-eth.com",
+					},
+				},
+			},
+			{
+				Name: "Backup",
 				Connection: TargetConfigConnection{
 					HTTP: TargetConnectionHTTP{
 						URL: "https://cloudflare-eth.com",
@@ -84,13 +108,23 @@ func TestGetNextHealthyTargetIndexExcluding(t *testing.T) {
 	go manager.Start(ctx)
 	defer manager.Stop(ctx)
 
+	accFromBoth := runAccumulatedTests(func() int {
+		return manager.GetNextHealthyTargetIndexExcluding([]uint{})
+	})
+	accWithFirstExcluded := runAccumulatedTests(func() int {
+		return manager.GetNextHealthyTargetIndexExcluding([]uint{0})
+	})
+	accWithSecondExcluded := runAccumulatedTests(func() int {
+		return manager.GetNextHealthyTargetIndexExcluding([]uint{1})
+	})
+	t.Logf("Both: %f, no first: %f, no second: %f", accFromBoth, accWithFirstExcluded, accWithSecondExcluded)
+	assert.InDelta(t, .5, accFromBoth, .25)
+	assert.Equal(t, 1., accWithFirstExcluded)
+	assert.Equal(t, 0., accWithSecondExcluded)
+
 	manager.GetTargetByName("Primary").Taint()
 
-	assert.Equal(t, -1, manager.GetNextHealthyTargetIndexExcluding([]uint{}))
-
-	assert.Equal(t, -1, manager.GetNextHealthyTargetIndexExcluding([]uint{0}))
-
-	manager.GetTargetByName("Primary").RemoveTaint()
-
-	assert.Equal(t, 0, manager.GetNextHealthyTargetIndexExcluding([]uint{}))
+	assert.Equal(t, 1., runAccumulatedTests(func() int {
+		return manager.GetNextHealthyTargetIndexExcluding([]uint{})
+	}))
 }

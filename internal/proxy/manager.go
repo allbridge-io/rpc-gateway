@@ -2,8 +2,11 @@ package proxy
 
 import (
 	"context"
+	"math/rand"
 	"strconv"
 	"time"
+
+	"slices"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -195,33 +198,29 @@ func (h *HealthcheckManager) IsTargetHealthy(name string) bool {
 }
 
 func (h *HealthcheckManager) GetNextHealthyTargetIndex() int {
-	for idx, target := range h.healthcheckers {
-		if target.IsHealthy() {
-			return idx
+	return h.GetNextHealthyTargetIndexExcluding([]uint{})
+}
+
+func (h *HealthcheckManager) GetNextHealthyTargetIndexExcluding(excludedIdx []uint) int {
+
+	totalTargets := len(h.healthcheckers)
+	if totalTargets == 0 {
+		zap.L().Error("no targets")
+		return -1
+	}
+
+	idx := rand.Intn(totalTargets)
+	delta := 0
+	for delta < totalTargets {
+		adjustedIndex := (idx + delta) % totalTargets
+		target := h.healthcheckers[adjustedIndex]
+		if !slices.Contains(excludedIdx, uint(adjustedIndex)) && target.IsHealthy() {
+			return adjustedIndex
 		}
+		delta++
 	}
 
 	// no healthy targets, we down:(
 	zap.L().Error("no more healthy targets")
-	return -1
-}
-
-func (h *HealthcheckManager) GetNextHealthyTargetIndexExcluding(excludedIdx []uint) int {
-	for idx, target := range h.healthcheckers {
-		isExcluded := false
-		for _, excludedIndex := range excludedIdx {
-			if idx == int(excludedIndex) {
-				isExcluded = true
-				break
-			}
-		}
-
-		if !isExcluded && target.IsHealthy() {
-			return idx
-		}
-	}
-
-	// no healthy targets, we down:(
-	zap.L().Warn("no more healthy targets")
 	return -1
 }
