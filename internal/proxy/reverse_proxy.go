@@ -117,7 +117,7 @@ func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.Revers
 
 	var wsProxy *httputil.ReverseProxy
 	if config.Solana {
-		wsUrl := targetConfig.Connection.WS
+		wsUrl := targetConfig.Connection.WS.URL
 		if wsUrl == "" {
 			wsUrl = targetConfig.Connection.HTTP.URL
 		}
