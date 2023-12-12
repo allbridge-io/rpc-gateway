@@ -24,6 +24,7 @@ type TargetConnectionHTTP struct {
 
 type TargetConfigConnection struct {
 	HTTP TargetConnectionHTTP `yaml:"http"`
+	WS   string               `yaml:"ws"`
 }
 
 type TargetConfig struct {
@@ -36,4 +37,5 @@ type Config struct {
 	Proxy        ProxyConfig
 	Targets      []TargetConfig
 	HealthChecks HealthCheckConfig
+	Solana 		 bool
 }

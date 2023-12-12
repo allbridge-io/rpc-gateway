@@ -25,6 +25,7 @@ func createConfig() Config {
 			SuccessThreshold: 0,
 		},
 		Targets: []TargetConfig{},
+		Solana:  false,
 	}
 }
 
@@ -74,6 +75,61 @@ func TestHttpFailoverProxyRerouteRequests(t *testing.T) {
 	requestBody := bytes.NewBufferString(`{"this_is": "body"}`)
 	req, err := http.NewRequest("POST", "/", requestBody)
 
+	assert.Nil(t, err)
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(httpFailoverProxy.ServeHTTP)
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// This test makes sure that the request's body is forwarded to
+	// the next RPC Provider
+	//
+	assert.Equal(t, `{"this_is": "body"}`, rr.Body.String())
+}
+
+func TestHttpFailoverProxyRerouteWsRequests(t *testing.T) {
+	prometheus.DefaultRegisterer = prometheus.NewRegistry()
+
+	fakeRPC1Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Bad Request", http.StatusInternalServerError)
+	}))
+	defer fakeRPC1Server.Close()
+
+	fakeRPC2Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Write(body)
+	}))
+	defer fakeRPC2Server.Close()
+
+	rpcGatewayConfig := createConfig()
+	rpcGatewayConfig.Targets = []TargetConfig{
+		{
+			Name: "Server1",
+			Connection: TargetConfigConnection{
+				HTTP: TargetConnectionHTTP{
+					URL: fakeRPC1Server.URL,
+				},
+				WS: fakeRPC2Server.URL,
+			},
+		},
+	}
+	rpcGatewayConfig.Solana = true
+	healthcheckManager := NewHealthcheckManager(HealthcheckManagerConfig{
+		Targets: rpcGatewayConfig.Targets,
+		Config:  rpcGatewayConfig.HealthChecks,
+		Solana: true,
+	})
+
+	// Setup HttpFailoverProxy but not starting the HealthCheckManager
+	// so the no target will be tainted or marked as unhealthy by the HealthCheckManager
+	// the failoverProxy should automatically reroute the request to the second RPC Server by itself
+	httpFailoverProxy := NewProxy(rpcGatewayConfig, healthcheckManager)
+
+	requestBody := bytes.NewBufferString(`{"this_is": "body"}`)
+	req, err := http.NewRequest("POST", "/", requestBody)
+	req.Header.Add("Upgrade", "WebSocket")
 	assert.Nil(t, err)
 
 	rr := httptest.NewRecorder()

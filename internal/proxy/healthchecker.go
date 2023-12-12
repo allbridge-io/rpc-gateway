@@ -37,6 +37,7 @@ type Healthchecker interface {
 type RPCHealthcheckerConfig struct {
 	URL  string
 	Name string // identifier imported from RPC gateway config
+	Solana bool // if Solana
 
 	// How often to check health.
 	Interval time.Duration `yaml:"healthcheckInterval"`
@@ -151,6 +152,29 @@ func (h *RPCHealthchecker) checkBlockNumber(ctx context.Context) (uint64, error)
 	return uint64(blockNumber), nil
 }
 
+func (h *RPCHealthchecker) checkSolanaSlotNumber(ctx context.Context) (uint64, error) {
+	// First we check the block number reported by the node. This is later
+	// used to evaluate a single RPC node against others
+	var blockNumber uint64
+
+	start := time.Now()
+	err := h.client.CallContext(ctx, &blockNumber, "getSlot")
+	if err != nil {
+		zap.L().Warn("error fetching the slot number", zap.Error(err), zap.String("name", h.config.Name))
+		return 0, err
+	}
+	duration := time.Since(start)
+	if h.metricResponseTime != nil {
+		h.metricResponseTime.WithLabelValues(h.config.Name, "eth_blockNumber").Observe(duration.Seconds())
+	}
+	if h.metricRPCProviderBlockNumber != nil {
+		h.metricRPCProviderBlockNumber.WithLabelValues(h.config.Name).Set(float64(blockNumber))
+	}
+	zap.L().Debug("fetched slot", zap.Uint64("slotNumber", uint64(blockNumber)), zap.String("rpcProvider", h.config.Name))
+
+	return uint64(blockNumber), nil
+}
+
 // checkGasLimit performs an `eth_call` with a GasLeft.sol contract call. We also
 // want to perform an eth_call to make sure eth_call requests are also succeding
 // as blockNumber can be either cached or routed to a different service on the
@@ -187,8 +211,13 @@ func (h *RPCHealthchecker) checkAndSetBlockNumberHealth() {
 	//
 	// This should be moved to a different place, because it does not do a
 	// health checking but it provides additional context.
-
-	blockNumber, err := h.checkBlockNumber(ctx)
+	var blockNumber uint64
+    var err error
+	if h.config.Solana {
+		blockNumber, err = h.checkSolanaSlotNumber(ctx)
+	} else {
+		blockNumber, err = h.checkBlockNumber(ctx)
+	}
 	if err != nil {
 		return
 	}
@@ -199,6 +228,9 @@ func (h *RPCHealthchecker) checkAndSetBlockNumberHealth() {
 }
 
 func (h *RPCHealthchecker) checkAndSetGasLeftHealth() {
+	if h.config.Solana {
+		return
+	}
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, h.config.Timeout)
 	defer cancel()

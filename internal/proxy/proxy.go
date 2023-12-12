@@ -16,8 +16,10 @@ import (
 )
 
 type HTTPTarget struct {
-	Config TargetConfig
-	Proxy  *httputil.ReverseProxy
+	Config  TargetConfig
+	Proxy  	*httputil.ReverseProxy
+	WsProxy *httputil.ReverseProxy
+
 }
 
 type Proxy struct {
@@ -158,7 +160,7 @@ func (h *Proxy) doErrorHandler(config TargetConfig, index uint) func(http.Respon
 }
 
 func (h *Proxy) AddTarget(target TargetConfig, index uint) error {
-	proxy, err := NewReverseProxy(target, h.config)
+	proxy, wsProxy, err := NewReverseProxy(target, h.config)
 	if err != nil {
 		return err
 	}
@@ -173,8 +175,9 @@ func (h *Proxy) AddTarget(target TargetConfig, index uint) error {
 	h.targets = append(
 		h.targets,
 		&HTTPTarget{
-			Config: target,
-			Proxy:  proxy,
+			Config:  target,
+			Proxy:   proxy,
+			WsProxy: wsProxy,
 		})
 
 	return nil
@@ -210,7 +213,11 @@ func (h *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	peer := h.GetNextTargetExcluding(visitedTargets)
 	if peer != nil {
 		start := time.Now()
-		peer.Proxy.ServeHTTP(w, r)
+		if r.Header.Get("Upgrade") != "" && peer.WsProxy != nil {
+			peer.WsProxy.ServeHTTP(w, r)
+		} else {
+			peer.Proxy.ServeHTTP(w, r)
+		}
 		duration := time.Since(start)
 		h.metricResponseTime.WithLabelValues(peer.Config.Name, r.Method).Observe(duration.Seconds())
 
