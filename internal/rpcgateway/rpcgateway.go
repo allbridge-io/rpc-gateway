@@ -49,7 +49,7 @@ func (r *RPCGateway) Start(ctx context.Context) error {
 		zap.L().Error("Failed parse port number", zap.Error(err))
 	}
 
-	go func () error {
+	go func () {
 		wsListenAddress := fmt.Sprintf(":%d", portNumber + 1)
 
 		zap.L().Info("starting ws failover proxy", zap.String("wsListenAddress", wsListenAddress))
@@ -59,7 +59,10 @@ func (r *RPCGateway) Start(ctx context.Context) error {
 		}
 		wsListener := conntrack.NewListener(listener, conntrack.TrackWithTracing())
 		conntrack.NewListener(listener, conntrack.TrackWithTracing())
-		return r.wsServer.Serve(wsListener)
+		err = r.wsServer.Serve(wsListener)
+		if err != nil {
+			panic(err)
+		}
 	}()
 
 	listenAddress := fmt.Sprintf(":%d", portNumber)
