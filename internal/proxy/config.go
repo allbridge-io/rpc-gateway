@@ -22,9 +22,13 @@ type TargetConnectionHTTP struct {
 	DisableKeepAlives bool   `yaml:"disableKeepAlives"`
 }
 
+type TargetConnectionWS struct {
+	URL               string `yaml:"url"`
+}
+
 type TargetConfigConnection struct {
 	HTTP TargetConnectionHTTP `yaml:"http"`
-	WS   string               `yaml:"ws"`
+	WS   TargetConnectionWS   `yaml:"ws"`
 }
 
 type TargetConfig struct {

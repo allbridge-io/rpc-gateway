@@ -18,6 +18,7 @@ targets:
         url: "https://rpc.ankr.com/eth"
         # compression: true # Specify if the target supports request compression
       # optionl ws url for solana configuration
-      ws: "wss://solana.ws.node"
+      ws:
+        url: "wss://solana.ws.node"
 
 solana: false # if gateway is for solana

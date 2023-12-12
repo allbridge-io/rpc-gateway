@@ -111,7 +111,9 @@ func TestHttpFailoverProxyRerouteWsRequests(t *testing.T) {
 				HTTP: TargetConnectionHTTP{
 					URL: fakeRPC1Server.URL,
 				},
-				WS: fakeRPC2Server.URL,
+				WS: TargetConnectionWS{
+					URL: fakeRPC2Server.URL,
+				},
 			},
 		},
 	}
