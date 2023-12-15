@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/0xProject/rpc-gateway/internal/proxy"
@@ -25,6 +26,7 @@ type RPCGateway struct {
 	httpFailoverProxy  *proxy.Proxy
 	healthcheckManager *proxy.HealthcheckManager
 	server             *http.Server
+	wsServer           *http.Server
 }
 
 func (r *RPCGateway) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -42,14 +44,36 @@ func (r *RPCGateway) Start(ctx context.Context) error {
 			zap.L().Fatal("failed to start healthcheck manager", zap.Error(err))
 		}
 	}()
+	portNumber, err := strconv.Atoi(r.config.Proxy.Port)
+	if err != nil {
+		zap.L().Error("Failed parse port number", zap.Error(err))
+	}
 
-	listenAddress := fmt.Sprintf(":%s", r.config.Proxy.Port)
+	go func () {
+		wsListenAddress := fmt.Sprintf(":%d", portNumber + 1)
+
+		zap.L().Info("starting ws failover proxy", zap.String("wsListenAddress", wsListenAddress))
+		listener, err := net.Listen("tcp", wsListenAddress)
+		if err != nil {
+			zap.L().Error("Failed to listen ws", zap.Error(err))
+		}
+		wsListener := conntrack.NewListener(listener, conntrack.TrackWithTracing())
+		conntrack.NewListener(listener, conntrack.TrackWithTracing())
+		err = r.wsServer.Serve(wsListener)
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	listenAddress := fmt.Sprintf(":%d", portNumber)
+
 	zap.L().Info("starting http failover proxy", zap.String("listenAddr", listenAddress))
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		zap.L().Error("Failed to listen", zap.Error(err))
 	}
 	httpListener := conntrack.NewListener(listener, conntrack.TrackWithTracing())
+	conntrack.NewListener(listener, conntrack.TrackWithTracing())
 	return r.server.Serve(httpListener)
 }
 
@@ -59,6 +83,9 @@ func (r *RPCGateway) Stop(ctx context.Context) error {
 	if err != nil {
 		zap.L().Error("healthcheck manager failed to stop gracefully", zap.Error(err))
 	}
+	go func() error {
+		return r.wsServer.Close();
+	}()
 	return r.server.Close()
 }
 
@@ -71,12 +98,14 @@ func NewRPCGateway(config RPCGatewayConfig) *RPCGateway {
 		proxy.HealthcheckManagerConfig{
 			Targets: config.Targets,
 			Config:  config.HealthChecks,
+			Solana:  config.Solana,
 		})
 	httpFailoverProxy := proxy.NewProxy(
 		proxy.Config{
 			Proxy:        config.Proxy,
 			Targets:      config.Targets,
 			HealthChecks: config.HealthChecks,
+			Solana: 	  config.Solana,
 		},
 		healthcheckManager,
 	)
@@ -102,11 +131,19 @@ func NewRPCGateway(config RPCGatewayConfig) *RPCGateway {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	ws := &http.Server{
+		Handler:           r,
+		WriteTimeout:      15 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
 	gateway := &RPCGateway{
 		config:             config,
 		httpFailoverProxy:  httpFailoverProxy,
 		healthcheckManager: healthcheckManager,
 		server:             srv,
+		wsServer:           ws,
 	}
 
 	r.PathPrefix("/").Handler(httpFailoverProxy)

@@ -17,3 +17,8 @@ targets:
       http: # ws is supported by default, it will be a sticky connection.
         url: "https://rpc.ankr.com/eth"
         # compression: true # Specify if the target supports request compression
+      # optionl ws url for solana configuration
+      ws:
+        url: "wss://solana.ws.node"
+
+solana: false # if gateway is for solana

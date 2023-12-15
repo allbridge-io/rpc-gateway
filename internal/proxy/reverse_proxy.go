@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mwitkow/go-conntrack"
@@ -25,6 +29,10 @@ func doProcessRequest(r *http.Request, config TargetConfig) error {
 	var body io.Reader
 	var buf bytes.Buffer
 	var err error
+
+	if r.Header.Get("Upgrade") != "" {
+		return nil
+	}
 
 	if r.Body == nil {
 		return errors.New("no body")
@@ -101,10 +109,50 @@ func doGunzip(r *http.Request) (io.Reader, error) {
 	return body, nil
 }
 
-func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.ReverseProxy, error) {
+func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.ReverseProxy, *httputil.ReverseProxy, error) {
 	target, err := url.Parse(targetConfig.Connection.HTTP.URL)
 	if err != nil {
-		return nil, errors.Wrap(err, "cannot parse url")
+		return nil, nil, errors.Wrap(err, "cannot parse url")
+	}
+
+	var wsProxy *httputil.ReverseProxy
+	if config.Solana {
+		wsUrl := targetConfig.Connection.WS.URL
+		if wsUrl == "" {
+			wsUrl = targetConfig.Connection.HTTP.URL
+		}
+
+		wsUrl = regexp.MustCompile("^ws").ReplaceAllLiteralString(wsUrl, `http`)
+		wsTarget, err := url.Parse(wsUrl)
+		if err != nil {
+			wsTarget = target
+			splittedHost := strings.Split(wsTarget.Host, ":")
+			if len(splittedHost) == 2 {
+				portNum, err := strconv.Atoi(splittedHost[1])
+				if err != nil {
+					zap.L().Error("Failed parse port number", zap.Error(err))
+				}
+				wsTarget.Host = fmt.Sprintf("%s:%d", splittedHost[0], portNum + 1)
+			}
+			return nil, nil, errors.Wrap(err, "cannot parse url")
+		}
+
+		wsProxy = httputil.NewSingleHostReverseProxy(target)
+		wsProxy.Director = func(r *http.Request) {
+			r.Host = wsTarget.Host
+			r.URL.Scheme = wsTarget.Scheme
+			r.URL.Host = wsTarget.Host
+			r.URL.Path = wsTarget.Path
+
+			// Workaround to reserve request body in ReverseProxy.ErrorHandler
+			// see more here: https://github.com/golang/go/issues/33726
+			//
+			if err := doProcessRequest(r, targetConfig); err != nil {
+				zap.L().Error("cannot process request", zap.Error(err))
+			}
+
+			zap.L().Debug("request forward", zap.String("WS", r.URL.String()))
+		}
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
@@ -123,6 +171,7 @@ func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.Revers
 
 		zap.L().Debug("request forward", zap.String("URL", r.URL.String()))
 	}
+
 
 	conntrackDialer := conntrack.NewDialContextFunc(
 		conntrack.DialWithName(targetConfig.Name),
@@ -147,5 +196,5 @@ func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.Revers
 
 	conntrack.PreRegisterDialerMetrics(targetConfig.Name)
 
-	return proxy, nil
+	return proxy, wsProxy, nil
 }

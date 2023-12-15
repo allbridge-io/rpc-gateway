@@ -46,6 +46,43 @@ func TestBasicHealthchecker(t *testing.T) {
 	assert.True(t, healthchecker.IsHealthy())
 }
 
+// TestBasicHealthchecker checks if it runs with solana options.
+func TestSolanaHealthchecker(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	// We replace the global logger with this initialized here for simplyfication.
+	// Do see: https://github.com/uber-go/zap/blob/master/FAQ.md#why-include-package-global-loggers
+	// ref: https://pkg.go.dev/go.uber.org/zap?utm_source=godoc#ReplaceGlobals
+	zap.ReplaceGlobals(logger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	healtcheckConfig := RPCHealthcheckerConfig{
+		URL:              "https://api.mainnet-beta.solana.com",
+		Interval:         1 * time.Second,
+		Timeout:          2 * time.Second,
+		FailureThreshold: 1,
+		SuccessThreshold: 1,
+		Solana:           true,
+		}
+
+		healthchecker, err := NewHealthchecker(healtcheckConfig)
+		assert.Nil(t, err)
+
+		healthchecker.Start(ctx)
+
+		assert.NotZero(t, healthchecker.BlockNumber())
+
+		// TODO: can be flaky due to cloudflare-eth endpoint
+		assert.True(t, healthchecker.IsHealthy())
+
+		healthchecker.Taint()
+		assert.False(t, healthchecker.IsHealthy())
+
+		healthchecker.RemoveTaint()
+		assert.True(t, healthchecker.IsHealthy())
+}
+
 func TestGasLeftCall(t *testing.T) {
 	client := &http.Client{}
 	url := "https://cloudflare-eth.com"

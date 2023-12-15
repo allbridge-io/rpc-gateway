@@ -22,8 +22,13 @@ type TargetConnectionHTTP struct {
 	DisableKeepAlives bool   `yaml:"disableKeepAlives"`
 }
 
+type TargetConnectionWS struct {
+	URL               string `yaml:"url"`
+}
+
 type TargetConfigConnection struct {
 	HTTP TargetConnectionHTTP `yaml:"http"`
+	WS   TargetConnectionWS   `yaml:"ws"`
 }
 
 type TargetConfig struct {
@@ -36,4 +41,5 @@ type Config struct {
 	Proxy        ProxyConfig
 	Targets      []TargetConfig
 	HealthChecks HealthCheckConfig
+	Solana 		 bool
 }

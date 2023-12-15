@@ -16,6 +16,7 @@ import (
 type HealthcheckManagerConfig struct {
 	Targets []TargetConfig
 	Config  HealthCheckConfig
+	Solana  bool
 }
 
 type HealthcheckManager struct {
@@ -90,6 +91,7 @@ func NewHealthcheckManager(config HealthcheckManagerConfig) *HealthcheckManager 
 			RPCHealthcheckerConfig{
 				URL:              target.Connection.HTTP.URL,
 				Name:             target.Name,
+				Solana:			  config.Solana,
 				Interval:         config.Config.Interval,
 				Timeout:          config.Config.Timeout,
 				FailureThreshold: config.Config.FailureThreshold,
