@@ -11,29 +11,43 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/metrics"
 	"github.com/0xProject/rpc-gateway/internal/rpcgateway"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 )
+
+func setupLogger() {
+	stdout := zapcore.AddSync(os.Stdout)
+	debugLogEnabled := os.Getenv("DEBUG") == "true"
+
+	level := zap.NewAtomicLevelAt(zap.InfoLevel)
+	if debugLogEnabled {
+		level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	}
+
+	developmentConfig := zap.NewDevelopmentEncoderConfig()
+	developmentConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	developmentConfig.EncodeTime = zapcore.RFC3339TimeEncoder
+
+	consoleEncoder := zapcore.NewConsoleEncoder(developmentConfig)
+
+	core := zapcore.NewTee(
+		zapcore.NewCore(consoleEncoder, stdout, level),
+	)
+
+	logger := zap.New(core)
+	zap.ReplaceGlobals(logger)
+}
 
 func main() {
 	topCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	debugLogEnabled := os.Getenv("DEBUG") == "true"
-	logLevel := zap.WarnLevel
-	if debugLogEnabled {
-		logLevel = zap.DebugLevel
-	}
-	zapConfig := zap.NewProductionConfig()
-	zapConfig.Level = zap.NewAtomicLevelAt(logLevel)
-	logger, _ := zapConfig.Build()
-	// We replace the global logger with this initialized here for simplyfication.
-	// Do see: https://github.com/uber-go/zap/blob/master/FAQ.md#why-include-package-global-loggers
-	// ref: https://pkg.go.dev/go.uber.org/zap?utm_source=godoc#ReplaceGlobals
-	zap.ReplaceGlobals(logger)
+	setupLogger()
+
 	defer func() {
-		err := logger.Sync() // flushes buffer, if any
+		err := zap.L().Sync() // flushes buffer, if any
 		if err != nil {
-			logger.Error("failed to flush logger with err: %s", zap.Error(err))
+			zap.L().Error("failed to flush logger with err: %s", zap.Error(err))
 		}
 	}()
 
@@ -44,7 +58,7 @@ func main() {
 	flag.Parse()
 	config, err := rpcgateway.NewRPCGatewayFromConfigFile(*configFileLocation)
 	if err != nil {
-		logger.Fatal("failed to get config", zap.Error(err))
+		zap.L().Fatal("failed to get config", zap.Error(err))
 	}
 
 	// start gateway
@@ -64,11 +78,11 @@ func main() {
 		<-gCtx.Done()
 		err := metricsServer.Stop()
 		if err != nil {
-			logger.Error("error when stopping healthserver", zap.Error(err))
+			zap.L().Error("error when stopping healthserver", zap.Error(err))
 		}
 		err = rpcGateway.Stop(context.TODO())
 		if err != nil {
-			logger.Error("error when stopping rpc gateway", zap.Error(err))
+			zap.L().Error("error when stopping rpc gateway", zap.Error(err))
 		}
 		return nil
 	})
