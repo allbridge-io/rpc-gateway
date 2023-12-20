@@ -88,9 +88,10 @@ func (h *Proxy) doModifyResponse(config TargetConfig) func(*http.Response) error
 	return func(resp *http.Response) error {
 		h.metricResponseStatus.WithLabelValues(config.Name, strconv.Itoa(resp.StatusCode)).Inc()
 
-		body, err := io.ReadAll(resp.Body)
+		// TODO
+		dump, err := httputil.DumpResponse(resp, true)
 		if err == nil {
-			zap.L().Debug("http body response", zap.String("response", string(body)))
+			zap.L().Info("http raw response", zap.String("response", string(dump)))
 		}
 
 		switch {
