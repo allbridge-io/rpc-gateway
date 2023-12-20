@@ -74,3 +74,13 @@ func performGasLeftCall(ctx context.Context, client *http.Client, url string) (u
 
 	return hexToUint(result.Result)
 }
+
+func boolToInt(v bool) int {
+	x := 0
+
+	if v {
+		x = 1
+	}
+
+	return x
+}

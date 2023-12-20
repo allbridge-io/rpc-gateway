@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ const (
 	MetricBlockNumber int = iota
 	MetricGasLimit
 	MetricResponseTime
+	MetricRPCResponseStatus
 )
 
 const (
@@ -35,9 +37,9 @@ type Healthchecker interface {
 }
 
 type RPCHealthcheckerConfig struct {
-	URL  string
-	Name string // identifier imported from RPC gateway config
-	Solana bool // if Solana
+	URL    string
+	Name   string // identifier imported from RPC gateway config
+	Solana bool   // if Solana
 
 	// How often to check health.
 	Interval time.Duration `yaml:"healthcheckInterval"`
@@ -91,6 +93,7 @@ type RPCHealthchecker struct {
 	metricResponseTime           *prometheus.HistogramVec
 	metricRPCProviderBlockNumber *prometheus.GaugeVec
 	metricRPCProviderGasLimit    *prometheus.GaugeVec
+	metricRPCResponseStatus      *prometheus.CounterVec
 }
 
 func NewHealthchecker(config RPCHealthcheckerConfig) (Healthchecker, error) {
@@ -124,8 +127,21 @@ func (h *RPCHealthchecker) SetMetric(i int, metric interface{}) {
 		h.metricRPCProviderGasLimit = metric.(*prometheus.GaugeVec)
 	case MetricResponseTime:
 		h.metricResponseTime = metric.(*prometheus.HistogramVec)
+	case MetricRPCResponseStatus:
+		h.metricRPCResponseStatus = metric.(*prometheus.CounterVec)
+
+		h.metricRPCResponseStatus.WithLabelValues(h.config.Name, "ok").Add(0)
+		h.metricRPCResponseStatus.WithLabelValues(h.config.Name, "refused").Add(0)
 	default:
 		zap.L().Warn("invalid metric type, ignoring.")
+	}
+}
+
+func (h *RPCHealthchecker) checkRpcResponseError(rpcError error) {
+	refused := strings.Contains(rpcError.Error(), "refused")
+
+	if refused {
+		h.metricRPCResponseStatus.WithLabelValues(h.config.Name, "refused").Inc()
 	}
 }
 
@@ -136,14 +152,21 @@ func (h *RPCHealthchecker) checkBlockNumber(ctx context.Context) (uint64, error)
 
 	start := time.Now()
 	err := h.client.CallContext(ctx, &blockNumber, "eth_blockNumber")
+
 	if err != nil {
+		h.checkRpcResponseError(err)
+
 		zap.L().Warn("error fetching the block number", zap.Error(err), zap.String("name", h.config.Name))
 		return 0, err
 	}
+
+	h.metricRPCResponseStatus.WithLabelValues(h.config.Name, "ok").Inc()
 	duration := time.Since(start)
+
 	if h.metricResponseTime != nil {
 		h.metricResponseTime.WithLabelValues(h.config.Name, "eth_blockNumber").Observe(duration.Seconds())
 	}
+
 	if h.metricRPCProviderBlockNumber != nil {
 		h.metricRPCProviderBlockNumber.WithLabelValues(h.config.Name).Set(float64(blockNumber))
 	}
@@ -159,14 +182,21 @@ func (h *RPCHealthchecker) checkSolanaSlotNumber(ctx context.Context) (uint64, e
 
 	start := time.Now()
 	err := h.client.CallContext(ctx, &blockNumber, "getSlot")
+
 	if err != nil {
+		h.checkRpcResponseError(err)
+
 		zap.L().Warn("error fetching the slot number", zap.Error(err), zap.String("name", h.config.Name))
 		return 0, err
 	}
+
+	h.metricRPCResponseStatus.WithLabelValues(h.config.Name, "ok").Inc()
 	duration := time.Since(start)
+
 	if h.metricResponseTime != nil {
 		h.metricResponseTime.WithLabelValues(h.config.Name, "eth_blockNumber").Observe(duration.Seconds())
 	}
+
 	if h.metricRPCProviderBlockNumber != nil {
 		h.metricRPCProviderBlockNumber.WithLabelValues(h.config.Name).Set(float64(blockNumber))
 	}
@@ -181,14 +211,21 @@ func (h *RPCHealthchecker) checkSolanaSlotNumber(ctx context.Context) (uint64, e
 // RPC provider's side.
 func (h *RPCHealthchecker) checkGasLimit(ctx context.Context) (uint64, error) {
 	gasLimit, err := performGasLeftCall(ctx, h.httpClient, h.config.URL)
+
 	if h.metricRPCProviderGasLimit != nil {
 		h.metricRPCProviderGasLimit.WithLabelValues(h.config.Name).Set(float64(gasLimit))
 	}
+
 	zap.L().Debug("fetched gas limit", zap.Uint64("gasLimit", gasLimit), zap.String("rpcProvider", h.config.Name))
+
 	if err != nil {
+		h.checkRpcResponseError(err)
+
 		zap.L().Warn("failed fetching the gas limit", zap.Error(err), zap.String("rpcProvider", h.config.Name))
 		return gasLimit, err
 	}
+
+	h.metricRPCResponseStatus.WithLabelValues(h.config.Name, "ok").Inc()
 
 	return gasLimit, nil
 }
@@ -212,12 +249,14 @@ func (h *RPCHealthchecker) checkAndSetBlockNumberHealth() {
 	// This should be moved to a different place, because it does not do a
 	// health checking but it provides additional context.
 	var blockNumber uint64
-    var err error
+	var err error
+
 	if h.config.Solana {
 		blockNumber, err = h.checkSolanaSlotNumber(ctx)
 	} else {
 		blockNumber, err = h.checkBlockNumber(ctx)
 	}
+
 	if err != nil {
 		return
 	}
@@ -233,15 +272,19 @@ func (h *RPCHealthchecker) checkAndSetGasLeftHealth() {
 	}
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, h.config.Timeout)
+
 	defer cancel()
 
 	gasLimit, err := h.checkGasLimit(ctx)
 	h.mu.Lock()
+
 	defer h.mu.Unlock()
+
 	if err != nil {
 		h.isHealthy = false
 		return
 	}
+
 	h.gasLimit = gasLimit
 	h.isHealthy = true
 }
@@ -249,8 +292,10 @@ func (h *RPCHealthchecker) checkAndSetGasLeftHealth() {
 func (h *RPCHealthchecker) Start(ctx context.Context) {
 	h.CheckAndSetHealth()
 	ticker := time.NewTicker(h.config.Interval)
+
 	defer ticker.Stop()
 	h.ticker = ticker
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -308,7 +353,9 @@ func (h *RPCHealthchecker) Taint() {
 	} else {
 		h.currentTaintWaitTime = initialTaintWaitTime
 	}
+
 	zap.L().Info("RPC Tainted", zap.String("name", h.config.Name), zap.Int64("taintWaitTime", int64(h.currentTaintWaitTime)))
+
 	go func() {
 		<-time.After(h.currentTaintWaitTime)
 		h.RemoveTaint()

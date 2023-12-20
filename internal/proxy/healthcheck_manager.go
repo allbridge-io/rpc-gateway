@@ -27,6 +27,7 @@ type HealthcheckManager struct {
 	metricResponseTime           *prometheus.HistogramVec
 	metricRPCProviderBlockNumber *prometheus.GaugeVec
 	metricRPCProviderGasLimit    *prometheus.GaugeVec
+	metricRPCResponseStatus      *prometheus.CounterVec
 }
 
 func NewHealthcheckManager(config HealthcheckManagerConfig) *HealthcheckManager {
@@ -84,6 +85,14 @@ func NewHealthcheckManager(config HealthcheckManagerConfig) *HealthcheckManager 
 			}, []string{
 				"provider",
 			}),
+		metricRPCResponseStatus: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "zeroex_rpc_gateway_provider_response_status",
+				Help: "Gas limit of a given provider",
+			}, []string{
+				"provider",
+				"status",
+			}),
 	}
 
 	for _, target := range config.Targets {
@@ -91,7 +100,7 @@ func NewHealthcheckManager(config HealthcheckManagerConfig) *HealthcheckManager 
 			RPCHealthcheckerConfig{
 				URL:              target.Connection.HTTP.URL,
 				Name:             target.Name,
-				Solana:			  config.Solana,
+				Solana:           config.Solana,
 				Interval:         config.Config.Interval,
 				Timeout:          config.Config.Timeout,
 				FailureThreshold: config.Config.FailureThreshold,
@@ -101,6 +110,7 @@ func NewHealthcheckManager(config HealthcheckManagerConfig) *HealthcheckManager 
 		healthchecker.SetMetric(MetricBlockNumber, healthcheckManager.metricRPCProviderBlockNumber)
 		healthchecker.SetMetric(MetricGasLimit, healthcheckManager.metricRPCProviderGasLimit)
 		healthchecker.SetMetric(MetricResponseTime, healthcheckManager.metricResponseTime)
+		healthchecker.SetMetric(MetricRPCResponseStatus, healthcheckManager.metricRPCResponseStatus)
 
 		if err != nil {
 			panic(err)
@@ -129,16 +139,8 @@ func (h *HealthcheckManager) runLoop(ctx context.Context) error {
 
 func (h *HealthcheckManager) reportStatusMetrics() {
 	for _, healthchecker := range h.healthcheckers {
-		healthy := 0
-		tainted := 0
-		if healthchecker.IsHealthy() {
-			healthy = 1
-		}
-		if healthchecker.IsTainted() {
-			tainted = 1
-		}
-		h.metricRPCProviderStatus.WithLabelValues(healthchecker.Name(), "healthy").Set(float64(healthy))
-		h.metricRPCProviderStatus.WithLabelValues(healthchecker.Name(), "tainted").Set(float64(tainted))
+		h.metricRPCProviderStatus.WithLabelValues(healthchecker.Name(), "healthy").Set(float64(boolToInt(healthchecker.IsHealthy())))
+		h.metricRPCProviderStatus.WithLabelValues(healthchecker.Name(), "tainted").Set(float64(boolToInt(healthchecker.IsTainted())))
 	}
 }
 

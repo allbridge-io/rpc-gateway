@@ -17,9 +17,8 @@ import (
 
 type HTTPTarget struct {
 	Config  TargetConfig
-	Proxy  	*httputil.ReverseProxy
+	Proxy   *httputil.ReverseProxy
 	WsProxy *httputil.ReverseProxy
-
 }
 
 type Proxy struct {
@@ -89,6 +88,11 @@ func (h *Proxy) doModifyResponse(config TargetConfig) func(*http.Response) error
 	return func(resp *http.Response) error {
 		h.metricResponseStatus.WithLabelValues(config.Name, strconv.Itoa(resp.StatusCode)).Inc()
 
+		body, err := io.ReadAll(resp.Body)
+		if err == nil {
+			zap.L().Debug("http body response", zap.String("response", string(body)))
+		}
+
 		switch {
 		// Here's the thing. A different provider may response with a
 		// different status code for the same query.  e.g. call for
@@ -103,19 +107,14 @@ func (h *Proxy) doModifyResponse(config TargetConfig) func(*http.Response) error
 		//
 		// Everything else, as long as it's jsonrpc payload should be
 		// considered as successful response.
-		//
 		case resp.StatusCode == http.StatusTooManyRequests:
 			// this code generates a fallback to backup provider.
-			//
 			zap.L().Warn("rate limited", zap.String("provider", config.Name))
-
 			return errors.New("rate limited")
 
 		case resp.StatusCode >= http.StatusInternalServerError:
 			// this code generates a fallback to backup provider.
-			//
 			zap.L().Warn("server error", zap.String("provider", config.Name))
-
 			return errors.New("server error")
 		}
 

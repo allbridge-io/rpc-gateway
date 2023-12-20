@@ -132,7 +132,7 @@ func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.Revers
 				if err != nil {
 					zap.L().Error("Failed parse port number", zap.Error(err))
 				}
-				wsTarget.Host = fmt.Sprintf("%s:%d", splittedHost[0], portNum + 1)
+				wsTarget.Host = fmt.Sprintf("%s:%d", splittedHost[0], portNum+1)
 			}
 			return nil, nil, errors.Wrap(err, "cannot parse url")
 		}
@@ -171,7 +171,6 @@ func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.Revers
 
 		zap.L().Debug("request forward", zap.String("URL", r.URL.String()))
 	}
-
 
 	conntrackDialer := conntrack.NewDialContextFunc(
 		conntrack.DialWithName(targetConfig.Name),
