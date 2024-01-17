@@ -49,20 +49,22 @@ func (r *RPCGateway) Start(ctx context.Context) error {
 		zap.L().Error("Failed parse port number", zap.Error(err))
 	}
 
-	go func() {
-		wsListenAddress := fmt.Sprintf(":%d", portNumber+1)
+	if r.config.Solana {
+		go func() {
+			wsListenAddress := fmt.Sprintf(":%d", portNumber+1)
 
-		zap.L().Info("starting ws failover proxy", zap.String("wsListenAddress", wsListenAddress))
-		listener, err := net.Listen("tcp", wsListenAddress)
-		if err != nil {
-			zap.L().Error("Failed to listen ws", zap.Error(err))
-		}
-		wsListener := conntrack.NewListener(listener, conntrack.TrackWithTracing())
-		err = r.wsServer.Serve(wsListener)
-		if err != nil {
-			panic(err)
-		}
-	}()
+			zap.L().Info("starting ws failover proxy", zap.String("wsListenAddress", wsListenAddress))
+			listener, err := net.Listen("tcp", wsListenAddress)
+			if err != nil {
+				zap.L().Error("Failed to listen ws", zap.Error(err))
+			}
+			wsListener := conntrack.NewListener(listener, conntrack.TrackWithTracing())
+			err = r.wsServer.Serve(wsListener)
+			if err != nil {
+				panic(err)
+			}
+		}()
+	}
 
 	listenAddress := fmt.Sprintf(":%d", portNumber)
 
