@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -17,9 +18,8 @@ import (
 
 type HTTPTarget struct {
 	Config  TargetConfig
-	Proxy  	*httputil.ReverseProxy
+	Proxy   *httputil.ReverseProxy
 	WsProxy *httputil.ReverseProxy
-
 }
 
 type Proxy struct {
@@ -111,6 +111,13 @@ func (h *Proxy) doModifyResponse(config TargetConfig) func(*http.Response) error
 
 			return errors.New("rate limited")
 
+		case resp.StatusCode >= http.StatusRequestEntityTooLarge:
+			// this code generates a fallback to backup provider.
+			//
+			zap.L().Warn("request entity too large", zap.String("provider", config.Name))
+
+			return errors.New("request entity too large")
+
 		case resp.StatusCode >= http.StatusInternalServerError:
 			// this code generates a fallback to backup provider.
 			//
@@ -119,6 +126,14 @@ func (h *Proxy) doModifyResponse(config TargetConfig) func(*http.Response) error
 			return errors.New("server error")
 		}
 
+		bodyString, err := getResponseBody(resp, config)
+		if err != nil {
+			return err
+		}
+
+		if strings.Contains(bodyString, "eth_getLogs is limited") {
+			return errors.New("eth_getLogs is limited")
+		}
 		return nil
 	}
 }
