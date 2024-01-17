@@ -140,7 +140,11 @@ func (h *Proxy) doModifyResponse(config TargetConfig, exceptions []Exception) fu
 
 		for _, exception := range exceptions {
 			if strings.Contains(bodyString, exception.Match) {
-				return errors.New(exception.Message)
+				message := exception.Message
+				if message == "" {
+					message = exception.Match
+				}
+				return errors.New(message)
 			}
 		}
 
