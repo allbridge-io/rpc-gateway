@@ -21,4 +21,8 @@ targets:
       ws:
         url: "wss://solana.ws.node"
 
+exceptions:
+  - match: "Match exception string"
+    message: "Error message"
+
 solana: false # if gateway is for solana

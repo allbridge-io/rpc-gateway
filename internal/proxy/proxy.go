@@ -77,7 +77,7 @@ func NewProxy(proxyConfig Config, healthCheckManager *HealthcheckManager) *Proxy
 	}
 
 	for index, target := range proxy.config.Targets {
-		if err := proxy.AddTarget(target, uint(index)); err != nil {
+		if err := proxy.AddTarget(target, uint(index), proxyConfig.Exceptions); err != nil {
 			panic(err)
 		}
 	}
@@ -85,7 +85,7 @@ func NewProxy(proxyConfig Config, healthCheckManager *HealthcheckManager) *Proxy
 	return proxy
 }
 
-func (h *Proxy) doModifyResponse(config TargetConfig) func(*http.Response) error {
+func (h *Proxy) doModifyResponse(config TargetConfig, exceptions []Exception) func(*http.Response) error {
 	return func(resp *http.Response) error {
 		h.metricResponseStatus.WithLabelValues(config.Name, strconv.Itoa(resp.StatusCode)).Inc()
 
@@ -124,6 +124,13 @@ func (h *Proxy) doModifyResponse(config TargetConfig) func(*http.Response) error
 			zap.L().Warn("server error", zap.String("provider", config.Name))
 
 			return errors.New("server error")
+
+		case resp.StatusCode >= http.StatusForbidden:
+			// this code generates a fallback to backup provider.
+			//
+			zap.L().Warn("access forbidden", zap.String("provider", config.Name))
+
+			return errors.New("access forbidden")
 		}
 
 		bodyString, err := getResponseBody(resp, config)
@@ -131,9 +138,12 @@ func (h *Proxy) doModifyResponse(config TargetConfig) func(*http.Response) error
 			return err
 		}
 
-		if strings.Contains(bodyString, "eth_getLogs is limited") {
-			return errors.New("eth_getLogs is limited")
+		for _, exception := range exceptions {
+			if strings.Contains(bodyString, exception.Match) {
+				return errors.New(exception.Message)
+			}
 		}
+
 		return nil
 	}
 }
@@ -174,7 +184,7 @@ func (h *Proxy) doErrorHandler(config TargetConfig, index uint) func(http.Respon
 	}
 }
 
-func (h *Proxy) AddTarget(target TargetConfig, index uint) error {
+func (h *Proxy) AddTarget(target TargetConfig, index uint, exceptions []Exception) error {
 	proxy, wsProxy, err := NewReverseProxy(target, h.config)
 	if err != nil {
 		return err
@@ -184,7 +194,7 @@ func (h *Proxy) AddTarget(target TargetConfig, index uint) error {
 	// ErrorHandler
 	// proxy.ModifyResponse = h.doModifyResponse(config)
 	//
-	proxy.ModifyResponse = h.doModifyResponse(target) // nolint:bodyclose
+	proxy.ModifyResponse = h.doModifyResponse(target, exceptions) // nolint:bodyclose
 	proxy.ErrorHandler = h.doErrorHandler(target, index)
 
 	h.targets = append(
