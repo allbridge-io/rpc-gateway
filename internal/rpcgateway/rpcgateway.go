@@ -58,7 +58,6 @@ func (r *RPCGateway) Start(ctx context.Context) error {
 			zap.L().Error("Failed to listen ws", zap.Error(err))
 		}
 		wsListener := conntrack.NewListener(listener, conntrack.TrackWithTracing())
-		conntrack.NewListener(listener, conntrack.TrackWithTracing())
 		err = r.wsServer.Serve(wsListener)
 		if err != nil {
 			panic(err)
@@ -73,7 +72,6 @@ func (r *RPCGateway) Start(ctx context.Context) error {
 		zap.L().Error("Failed to listen", zap.Error(err))
 	}
 	httpListener := conntrack.NewListener(listener, conntrack.TrackWithTracing())
-	conntrack.NewListener(listener, conntrack.TrackWithTracing())
 	return r.server.Serve(httpListener)
 }
 
