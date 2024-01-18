@@ -76,7 +76,7 @@ func NewProxy(proxyConfig Config, healthCheckManager *HealthcheckManager) *Proxy
 			"status_code",
 		}),
 		metricResponseErrors: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "zeroex_rpc_gateway_target_response_errors_handled_total",
+			Name: "allbridge_rpc_gateway_target_response_errors_handled_total",
 			Help: "Total number of responses with an error",
 		}, []string{
 			"provider",
