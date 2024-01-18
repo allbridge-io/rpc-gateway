@@ -30,6 +30,7 @@ type Proxy struct {
 	metricResponseTime   *prometheus.HistogramVec
 	metricRequestErrors  *prometheus.CounterVec
 	metricResponseStatus *prometheus.CounterVec
+	metricResponseErrors *prometheus.CounterVec
 }
 
 func NewProxy(proxyConfig Config, healthCheckManager *HealthcheckManager) *Proxy {
@@ -74,6 +75,13 @@ func NewProxy(proxyConfig Config, healthCheckManager *HealthcheckManager) *Proxy
 			"provider",
 			"status_code",
 		}),
+		metricResponseErrors: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "zeroex_rpc_gateway_target_response_errors_handled_total",
+			Help: "Total number of responses with an error",
+		}, []string{
+			"provider",
+			"error_message",
+		}),
 	}
 
 	for index, target := range proxy.config.Targets {
@@ -108,6 +116,7 @@ func (h *Proxy) doModifyResponse(config TargetConfig, exceptions []Exception) fu
 			// this code generates a fallback to backup provider.
 			//
 			zap.L().Warn("rate limited", zap.String("provider", config.Name))
+			h.metricResponseErrors.WithLabelValues(config.Name, "rate limited").Inc()
 
 			return errors.New("rate limited")
 
@@ -115,6 +124,7 @@ func (h *Proxy) doModifyResponse(config TargetConfig, exceptions []Exception) fu
 			// this code generates a fallback to backup provider.
 			//
 			zap.L().Warn("request entity too large", zap.String("provider", config.Name))
+			h.metricResponseErrors.WithLabelValues(config.Name, "request entity too large").Inc()
 
 			return errors.New("request entity too large")
 
@@ -122,6 +132,7 @@ func (h *Proxy) doModifyResponse(config TargetConfig, exceptions []Exception) fu
 			// this code generates a fallback to backup provider.
 			//
 			zap.L().Warn("server error", zap.String("provider", config.Name))
+			h.metricResponseErrors.WithLabelValues(config.Name, "server error").Inc()
 
 			return errors.New("server error")
 
@@ -129,6 +140,7 @@ func (h *Proxy) doModifyResponse(config TargetConfig, exceptions []Exception) fu
 			// this code generates a fallback to backup provider.
 			//
 			zap.L().Warn("access forbidden", zap.String("provider", config.Name))
+			h.metricResponseErrors.WithLabelValues(config.Name, "access forbidden").Inc()
 
 			return errors.New("access forbidden")
 		}
@@ -144,6 +156,8 @@ func (h *Proxy) doModifyResponse(config TargetConfig, exceptions []Exception) fu
 				if message == "" {
 					message = exception.Match
 				}
+				h.metricResponseErrors.WithLabelValues(config.Name, message).Inc()
+
 				return errors.New(message)
 			}
 		}
