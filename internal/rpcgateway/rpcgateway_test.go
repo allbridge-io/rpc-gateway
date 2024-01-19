@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	proxy2 "github.com/0xProject/rpc-gateway/internal/proxy"
 	"html/template"
 	"io"
 	"net/http"
@@ -36,15 +37,14 @@ targets:
       http:
         url: "{{ .URLOne }}"
         compression: false
-      ws:
-        url: ""
   - name: "AnkrTwo"
     connection:
       http:
         url: "{{ .URLTwo }}"
         compression: false
-      ws:
-        url: ""
+exceptions:
+  - match:   "error match string"
+    message: "error message"
 `
 
 var rpcRequestBody = `{"jsonrpc":"2.0","method":"eth_getBlockByHash","params":["0xb3b20624f8f0f86eb50dd04688409e5cea4bd02d700bf6e79e9384d47d6a5a35",true],"id":1}`
@@ -105,6 +105,12 @@ func TestRpcGatewayFailover(t *testing.T) {
 
 	config, err := NewRPCGatewayFromConfigString(configString)
 	assert.Nil(t, err)
+	assert.Equal(t, config.Exceptions, []proxy2.Exception{
+		{
+			Match:   "error match string",
+			Message: "error message",
+		},
+	})
 
 	gateway := NewRPCGateway(*config)
 	go gateway.Start(context.TODO())

@@ -10,5 +10,6 @@ type RPCGatewayConfig struct { //nolint:revive
 	Proxy        proxy.ProxyConfig       `yaml:"proxy"`
 	HealthChecks proxy.HealthCheckConfig `yaml:"healthChecks"`
 	Targets      []proxy.TargetConfig    `yaml:"targets"`
-	Solana       bool    				 `yaml:"solana"`
+	Exceptions   []proxy.Exception       `yaml:"exceptions"`
+	Solana       bool                    `yaml:"solana"`
 }

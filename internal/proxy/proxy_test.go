@@ -62,6 +62,12 @@ func TestHttpFailoverProxyRerouteRequests(t *testing.T) {
 			},
 		},
 	}
+	rpcGatewayConfig.Exceptions = []Exception{
+		{
+			Match:   "error match string",
+			Message: "error message",
+		},
+	}
 	healthcheckManager := NewHealthcheckManager(HealthcheckManagerConfig{
 		Targets: rpcGatewayConfig.Targets,
 		Config:  rpcGatewayConfig.HealthChecks,
@@ -87,6 +93,119 @@ func TestHttpFailoverProxyRerouteRequests(t *testing.T) {
 	// the next RPC Provider
 	//
 	assert.Equal(t, `{"this_is": "body"}`, rr.Body.String())
+}
+
+func TestHttpFailoverProxyHandleExceptions(t *testing.T) {
+	prometheus.DefaultRegisterer = prometheus.NewRegistry()
+
+	fakeRPC1Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Some exception (error match string) sent"))
+	}))
+	defer fakeRPC1Server.Close()
+
+	fakeRPC2Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Write(body)
+	}))
+	defer fakeRPC2Server.Close()
+
+	rpcGatewayConfig := createConfig()
+	rpcGatewayConfig.Targets = []TargetConfig{
+		{
+			Name: "Server1",
+			Connection: TargetConfigConnection{
+				HTTP: TargetConnectionHTTP{
+					URL: fakeRPC1Server.URL,
+				},
+			},
+		},
+		{
+			Name: "Server2",
+			Connection: TargetConfigConnection{
+				HTTP: TargetConnectionHTTP{
+					URL: fakeRPC2Server.URL,
+				},
+			},
+		},
+	}
+	rpcGatewayConfig.Exceptions = []Exception{
+		{
+			Match:   "error match string",
+			Message: "error message",
+		},
+	}
+	healthcheckManager := NewHealthcheckManager(HealthcheckManagerConfig{
+		Targets: rpcGatewayConfig.Targets,
+		Config:  rpcGatewayConfig.HealthChecks,
+	})
+
+	// Setup HttpFailoverProxy but not starting the HealthCheckManager
+	// so the no target will be tainted or marked as unhealthy by the HealthCheckManager
+	// the failoverProxy should automatically reroute the request to the second RPC Server by itself
+	httpFailoverProxy := NewProxy(rpcGatewayConfig, healthcheckManager)
+
+	requestBody := bytes.NewBufferString(`{"this_is": "body"}`)
+	req, err := http.NewRequest("POST", "/", requestBody)
+
+	assert.Nil(t, err)
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(httpFailoverProxy.ServeHTTP)
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// This test makes sure that the request's body is forwarded to
+	// the next RPC Provider
+	//
+	assert.Equal(t, `{"this_is": "body"}`, rr.Body.String())
+}
+
+func TestHttpException(t *testing.T) {
+	prometheus.DefaultRegisterer = prometheus.NewRegistry()
+
+	fakeRPC1Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Some exception (error match string) sent"))
+	}))
+	defer fakeRPC1Server.Close()
+
+	rpcGatewayConfig := createConfig()
+	rpcGatewayConfig.Targets = []TargetConfig{
+		{
+			Name: "Server1",
+			Connection: TargetConfigConnection{
+				HTTP: TargetConnectionHTTP{
+					URL: fakeRPC1Server.URL,
+				},
+			},
+		},
+	}
+	rpcGatewayConfig.Exceptions = []Exception{
+		{
+			Match:   "error match string",
+			Message: "error message",
+		},
+	}
+	healthcheckManager := NewHealthcheckManager(HealthcheckManagerConfig{
+		Targets: rpcGatewayConfig.Targets,
+		Config:  rpcGatewayConfig.HealthChecks,
+	})
+
+	// Setup HttpFailoverProxy but not starting the HealthCheckManager
+	// so the no target will be tainted or marked as unhealthy by the HealthCheckManager
+	// the failoverProxy should automatically reroute the request to the second RPC Server by itself
+	httpFailoverProxy := NewProxy(rpcGatewayConfig, healthcheckManager)
+
+	requestBody := bytes.NewBufferString(`{"this_is": "body"}`)
+	req, err := http.NewRequest("POST", "/", requestBody)
+
+	assert.Nil(t, err)
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(httpFailoverProxy.ServeHTTP)
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
 }
 
 func TestHttpFailoverProxyRerouteWsRequests(t *testing.T) {
@@ -121,7 +240,7 @@ func TestHttpFailoverProxyRerouteWsRequests(t *testing.T) {
 	healthcheckManager := NewHealthcheckManager(HealthcheckManagerConfig{
 		Targets: rpcGatewayConfig.Targets,
 		Config:  rpcGatewayConfig.HealthChecks,
-		Solana: true,
+		Solana:  true,
 	})
 
 	// Setup HttpFailoverProxy but not starting the HealthCheckManager
@@ -167,6 +286,12 @@ func TestHttpFailoverProxyDecompressRequest(t *testing.T) {
 					URL: fakeRPC1Server.URL,
 				},
 			},
+		},
+	}
+	rpcGatewayConfig.Exceptions = []Exception{
+		{
+			Match:   "error match string",
+			Message: "error message",
 		},
 	}
 
@@ -234,6 +359,12 @@ func TestHttpFailoverProxyWithCompressionSupportedTarget(t *testing.T) {
 					Compression: true,
 				},
 			},
+		},
+	}
+	rpcGatewayConfig.Exceptions = []Exception{
+		{
+			Match:   "error match string",
+			Message: "error message",
 		},
 	}
 
@@ -310,6 +441,12 @@ func TestHTTPFailoverProxyWhenCannotConnectToPrimaryProvider(t *testing.T) {
 					URL: fakeRPCServer.URL,
 				},
 			},
+		},
+	}
+	rpcGatewayConfig.Exceptions = []Exception{
+		{
+			Match:   "error match string",
+			Message: "error message",
 		},
 	}
 	healthcheckManager := NewHealthcheckManager(HealthcheckManagerConfig{
