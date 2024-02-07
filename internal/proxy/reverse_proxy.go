@@ -132,7 +132,7 @@ func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.Revers
 				if err != nil {
 					zap.L().Error("Failed parse port number", zap.Error(err))
 				}
-				wsTarget.Host = fmt.Sprintf("%s:%d", splittedHost[0], portNum + 1)
+				wsTarget.Host = fmt.Sprintf("%s:%d", splittedHost[0], portNum+1)
 			}
 			return nil, nil, errors.Wrap(err, "cannot parse url")
 		}
@@ -143,6 +143,7 @@ func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.Revers
 			r.URL.Scheme = wsTarget.Scheme
 			r.URL.Host = wsTarget.Host
 			r.URL.Path = wsTarget.Path
+			r.URL.RawQuery = target.RawQuery
 
 			// Workaround to reserve request body in ReverseProxy.ErrorHandler
 			// see more here: https://github.com/golang/go/issues/33726
@@ -161,6 +162,7 @@ func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.Revers
 		r.URL.Scheme = target.Scheme
 		r.URL.Host = target.Host
 		r.URL.Path = target.Path
+		r.URL.RawQuery = target.RawQuery
 
 		// Workaround to reserve request body in ReverseProxy.ErrorHandler
 		// see more here: https://github.com/golang/go/issues/33726
@@ -171,7 +173,6 @@ func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.Revers
 
 		zap.L().Debug("request forward", zap.String("URL", r.URL.String()))
 	}
-
 
 	conntrackDialer := conntrack.NewDialContextFunc(
 		conntrack.DialWithName(targetConfig.Name),
