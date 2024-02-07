@@ -49,21 +49,22 @@ func (r *RPCGateway) Start(ctx context.Context) error {
 		zap.L().Error("Failed parse port number", zap.Error(err))
 	}
 
-	go func () {
-		wsListenAddress := fmt.Sprintf(":%d", portNumber + 1)
+	if r.config.Solana {
+		go func() {
+			wsListenAddress := fmt.Sprintf(":%d", portNumber+1)
 
-		zap.L().Info("starting ws failover proxy", zap.String("wsListenAddress", wsListenAddress))
-		listener, err := net.Listen("tcp", wsListenAddress)
-		if err != nil {
-			zap.L().Error("Failed to listen ws", zap.Error(err))
-		}
-		wsListener := conntrack.NewListener(listener, conntrack.TrackWithTracing())
-		conntrack.NewListener(listener, conntrack.TrackWithTracing())
-		err = r.wsServer.Serve(wsListener)
-		if err != nil {
-			panic(err)
-		}
-	}()
+			zap.L().Info("starting ws failover proxy", zap.String("wsListenAddress", wsListenAddress))
+			listener, err := net.Listen("tcp", wsListenAddress)
+			if err != nil {
+				zap.L().Error("Failed to listen ws", zap.Error(err))
+			}
+			wsListener := conntrack.NewListener(listener, conntrack.TrackWithTracing())
+			err = r.wsServer.Serve(wsListener)
+			if err != nil {
+				panic(err)
+			}
+		}()
+	}
 
 	listenAddress := fmt.Sprintf(":%d", portNumber)
 
@@ -73,7 +74,6 @@ func (r *RPCGateway) Start(ctx context.Context) error {
 		zap.L().Error("Failed to listen", zap.Error(err))
 	}
 	httpListener := conntrack.NewListener(listener, conntrack.TrackWithTracing())
-	conntrack.NewListener(listener, conntrack.TrackWithTracing())
 	return r.server.Serve(httpListener)
 }
 
@@ -84,7 +84,7 @@ func (r *RPCGateway) Stop(ctx context.Context) error {
 		zap.L().Error("healthcheck manager failed to stop gracefully", zap.Error(err))
 	}
 	go func() error {
-		return r.wsServer.Close();
+		return r.wsServer.Close()
 	}()
 	return r.server.Close()
 }
@@ -105,7 +105,8 @@ func NewRPCGateway(config RPCGatewayConfig) *RPCGateway {
 			Proxy:        config.Proxy,
 			Targets:      config.Targets,
 			HealthChecks: config.HealthChecks,
-			Solana: 	  config.Solana,
+			Exceptions:   config.Exceptions,
+			Solana:       config.Solana,
 		},
 		healthcheckManager,
 	)

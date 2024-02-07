@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -17,9 +18,8 @@ import (
 
 type HTTPTarget struct {
 	Config  TargetConfig
-	Proxy  	*httputil.ReverseProxy
+	Proxy   *httputil.ReverseProxy
 	WsProxy *httputil.ReverseProxy
-
 }
 
 type Proxy struct {
@@ -30,6 +30,7 @@ type Proxy struct {
 	metricResponseTime   *prometheus.HistogramVec
 	metricRequestErrors  *prometheus.CounterVec
 	metricResponseStatus *prometheus.CounterVec
+	metricResponseErrors *prometheus.CounterVec
 }
 
 func NewProxy(proxyConfig Config, healthCheckManager *HealthcheckManager) *Proxy {
@@ -74,10 +75,17 @@ func NewProxy(proxyConfig Config, healthCheckManager *HealthcheckManager) *Proxy
 			"provider",
 			"status_code",
 		}),
+		metricResponseErrors: promauto.NewCounterVec(prometheus.CounterOpts{
+			Name: "allbridge_rpc_gateway_target_response_errors_handled_total",
+			Help: "Total number of responses with an error",
+		}, []string{
+			"provider",
+			"error_message",
+		}),
 	}
 
 	for index, target := range proxy.config.Targets {
-		if err := proxy.AddTarget(target, uint(index)); err != nil {
+		if err := proxy.AddTarget(target, uint(index), proxyConfig.Exceptions); err != nil {
 			panic(err)
 		}
 	}
@@ -85,7 +93,7 @@ func NewProxy(proxyConfig Config, healthCheckManager *HealthcheckManager) *Proxy
 	return proxy
 }
 
-func (h *Proxy) doModifyResponse(config TargetConfig) func(*http.Response) error {
+func (h *Proxy) doModifyResponse(config TargetConfig, exceptions []Exception) func(*http.Response) error {
 	return func(resp *http.Response) error {
 		h.metricResponseStatus.WithLabelValues(config.Name, strconv.Itoa(resp.StatusCode)).Inc()
 
@@ -108,15 +116,50 @@ func (h *Proxy) doModifyResponse(config TargetConfig) func(*http.Response) error
 			// this code generates a fallback to backup provider.
 			//
 			zap.L().Warn("rate limited", zap.String("provider", config.Name))
+			h.metricResponseErrors.WithLabelValues(config.Name, "rate limited").Inc()
 
 			return errors.New("rate limited")
+
+		case resp.StatusCode >= http.StatusRequestEntityTooLarge:
+			// this code generates a fallback to backup provider.
+			//
+			zap.L().Warn("request entity too large", zap.String("provider", config.Name))
+			h.metricResponseErrors.WithLabelValues(config.Name, "request entity too large").Inc()
+
+			return errors.New("request entity too large")
 
 		case resp.StatusCode >= http.StatusInternalServerError:
 			// this code generates a fallback to backup provider.
 			//
 			zap.L().Warn("server error", zap.String("provider", config.Name))
+			h.metricResponseErrors.WithLabelValues(config.Name, "server error").Inc()
 
 			return errors.New("server error")
+
+		case resp.StatusCode >= http.StatusForbidden:
+			// this code generates a fallback to backup provider.
+			//
+			zap.L().Warn("access forbidden", zap.String("provider", config.Name))
+			h.metricResponseErrors.WithLabelValues(config.Name, "access forbidden").Inc()
+
+			return errors.New("access forbidden")
+		}
+
+		bodyString, err := getResponseBody(resp, config)
+		if err != nil {
+			return err
+		}
+
+		for _, exception := range exceptions {
+			if strings.Contains(bodyString, exception.Match) {
+				message := exception.Message
+				if message == "" {
+					message = exception.Match
+				}
+				h.metricResponseErrors.WithLabelValues(config.Name, message).Inc()
+
+				return errors.New(message)
+			}
 		}
 
 		return nil
@@ -159,7 +202,7 @@ func (h *Proxy) doErrorHandler(config TargetConfig, index uint) func(http.Respon
 	}
 }
 
-func (h *Proxy) AddTarget(target TargetConfig, index uint) error {
+func (h *Proxy) AddTarget(target TargetConfig, index uint, exceptions []Exception) error {
 	proxy, wsProxy, err := NewReverseProxy(target, h.config)
 	if err != nil {
 		return err
@@ -169,7 +212,7 @@ func (h *Proxy) AddTarget(target TargetConfig, index uint) error {
 	// ErrorHandler
 	// proxy.ModifyResponse = h.doModifyResponse(config)
 	//
-	proxy.ModifyResponse = h.doModifyResponse(target) // nolint:bodyclose
+	proxy.ModifyResponse = h.doModifyResponse(target, exceptions) // nolint:bodyclose
 	proxy.ErrorHandler = h.doErrorHandler(target, index)
 
 	h.targets = append(

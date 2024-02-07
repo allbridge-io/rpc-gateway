@@ -17,8 +17,33 @@ targets:
       http: # ws is supported by default, it will be a sticky connection.
         url: "https://rpc.ankr.com/eth"
         # compression: true # Specify if the target supports request compression
-      # optionl ws url for solana configuration
+      # optional ws url for Solana configuration
       ws:
         url: "wss://solana.ws.node"
+
+exceptions:
+#   String to match in the response body
+  - match: "failed to get Arbitrum Node from backend"
+
+  - match: "block range is too wide"
+
+  - match: "block height exceeded"
+#   Optional message to send as error message, otherwise match string will send as error message
+    message: "Solana: block height exceeded"
+
+  - match: "Blockhash not found"
+    message: "Solana: Blockhash not found"
+
+  - match: "Block not available for slot"
+    message: "Solana: Block not available for slot"
+
+  - match: "socket hang up"
+
+  - match: "cannot query unfinalized data"
+
+  - match: "missing response for request"
+
+  - match: "after last accepted block"
+    message: "requested to block after last accepted block"
 
 solana: false # if gateway is for solana

@@ -109,6 +109,42 @@ func doGunzip(r *http.Request) (io.Reader, error) {
 	return body, nil
 }
 
+func cloneBody(r *http.Response) (io.Reader, error) {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot read body")
+	}
+
+	r.Body = io.NopCloser(bytes.NewBuffer(data))
+
+	return io.NopCloser(bytes.NewBuffer(data)), nil
+}
+
+func getResponseBody(resp *http.Response, config TargetConfig) (string, error) {
+	var body io.Reader
+	clonedBody, err := cloneBody(resp)
+	if err != nil {
+		return "", err
+	}
+
+	if resp.Header.Get("Content-Encoding") == "gzip" && !config.Connection.HTTP.Compression {
+		body, err = gzip.NewReader(clonedBody)
+		if err != nil {
+			return "", errors.Wrap(err, "cannot read a body")
+		}
+
+	} else {
+		body = clonedBody
+	}
+
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return "", errors.Wrap(err, "cannot read body")
+	}
+
+	return string(data), nil
+}
+
 func NewReverseProxy(targetConfig TargetConfig, config Config) (*httputil.ReverseProxy, *httputil.ReverseProxy, error) {
 	target, err := url.Parse(targetConfig.Connection.HTTP.URL)
 	if err != nil {
