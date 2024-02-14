@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/0xProject/rpc-gateway/internal/admin"
 	"github.com/0xProject/rpc-gateway/internal/metrics"
 	"github.com/0xProject/rpc-gateway/internal/rpcgateway"
 	"go.uber.org/zap"
@@ -56,6 +57,16 @@ func main() {
 		return metricsServer.Start()
 	})
 
+	adminConfig, err := admin.NewAdminServerConfigFromFile(*configFileLocation)
+	if err != nil {
+		logger.Fatal("failed to get admin server config", zap.Error(err))
+	}
+	// start administration server
+	adminServer := admin.NewServer(*adminConfig, rpcGateway)
+	g.Go(func() error {
+		return adminServer.Start()
+	})
+
 	g.Go(func() error {
 		return rpcGateway.Start(context.TODO())
 	})
@@ -65,6 +76,10 @@ func main() {
 		err := metricsServer.Stop()
 		if err != nil {
 			logger.Error("error when stopping healthserver", zap.Error(err))
+		}
+		err = adminServer.Stop()
+		if err != nil {
+			logger.Error("error when stopping admin Server", zap.Error(err))
 		}
 		err = rpcGateway.Stop(context.TODO())
 		if err != nil {
