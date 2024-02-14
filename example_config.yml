@@ -2,7 +2,7 @@ metrics:
   port: 9090 # port for prometheus metrics, served on /metrics and /
 
 admin:
-  port: 7926 # port for runtime configuration
+  port: 7926 # port for runtime configuration, served on /admin. Optional
 
 proxy:
   port: 3000 # port for RPC gateway

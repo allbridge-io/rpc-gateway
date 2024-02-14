@@ -39,10 +39,15 @@ func NewServer(config AdminServerConfig, r *rpcgateway.RPCGateway) *Server {
 
 	mux.HandleFunc("/admin/targets", GetTargetsHandler(r))
 
+    var port uint = 7926
+	if config.Port != 0 {
+		port = config.Port
+	}
+
 	return &Server{
 		server: &http.Server{
 			Handler:           mux,
-			Addr:              fmt.Sprintf(":%d", config.Port),
+			Addr:              fmt.Sprintf(":%d", port),
 			WriteTimeout:      15 * time.Second,
 			ReadTimeout:       15 * time.Second,
 			ReadHeaderTimeout: 5 * time.Second,
