@@ -35,6 +35,12 @@ func (s *Server) Stop() error {
 	return s.server.Close()
 }
 
+type DefaultHandler struct{}
+func (h DefaultHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    zap.L().Warn("request path not found", zap.String("path", r.URL.Path))
+    http.NotFound(w, r)
+}
+
 func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server {
 	r := mux.NewRouter()
 
@@ -47,6 +53,8 @@ func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server
 	r.HandleFunc("/admin/targets/", UpdateTargetHandler(gateway))
 
 	r.HandleFunc("/admin/targets", GetTargetsHandler(gateway))
+
+    r.PathPrefix("/").Handler(DefaultHandler{})
 
     var port uint = 7926
 	if config.Port != 0 {
