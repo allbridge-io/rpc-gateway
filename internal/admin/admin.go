@@ -50,9 +50,9 @@ func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server
 		zapmw.Recoverer(zapcore.ErrorLevel, "recover", zapmw.RecovererDefault),
 	)
 
-	r.HandleFunc("/admin/targets/", UpdateTargetHandler(gateway))
+	r.HandleFunc(config.BasePath + "/admin/targets/", UpdateTargetHandler(gateway))
 
-	r.HandleFunc("/admin/targets", GetTargetsHandler(gateway))
+	r.HandleFunc(config.BasePath + "/admin/targets", GetTargetsHandler(gateway))
 
     r.PathPrefix("/").Handler(DefaultHandler{})
 
