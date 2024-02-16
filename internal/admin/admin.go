@@ -52,8 +52,8 @@ func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server
 
     adminRouter := r.PathPrefix(config.BasePath + "/admin").Subrouter()
 
-	adminRouter.HandleFunc("/targets/", UpdateTargetHandler(gateway))
-	adminRouter.HandleFunc("/targets", GetTargetsHandler(gateway))
+	adminRouter.HandleFunc("/targets/{name}", updateTargetHandler(gateway)).Methods("OPTIONS", "POST")
+	adminRouter.HandleFunc("/targets", getTargetsHandler(gateway)).Methods("GET")
 
     r.PathPrefix("/").Handler(DefaultHandler{})
 
@@ -97,7 +97,7 @@ func NewAdminServerConfigFromString(configString string) (*AdminServerConfig, er
 }
 
 
-func GetTargetsHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
+func getTargetsHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
 		var targetInfos []TargetInfo
 
@@ -112,19 +112,12 @@ func GetTargetsHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
 			targetInfos = append(targetInfos, targetInfo)
 		}
 
-		response, err := json.Marshal(targetInfos)
-		if err != nil {
-			http.Error(w, "Failed to marshal JSON", http.StatusInternalServerError)
-			return
-		}
-
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(response)
+		json.NewEncoder(w).Encode(targetInfos)
 	}
 }
 
-func UpdateTargetHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
+func updateTargetHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		targetName := strings.TrimPrefix(r.URL.Path, "/admin/targets/")
 		if targetName == "" {
