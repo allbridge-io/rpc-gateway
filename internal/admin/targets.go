@@ -36,7 +36,8 @@ func GetTargetsHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
 
 func UpdateTargetHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		targetName := strings.TrimPrefix(r.URL.Path, "/admin/targets/")
+		parts := strings.Split(r.URL.Path, "/")
+        targetName := parts[len(parts)-1]
 		if targetName == "" {
 			http.Error(w, "Target name not provided", http.StatusBadRequest)
 			return
