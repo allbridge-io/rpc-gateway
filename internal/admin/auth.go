@@ -61,7 +61,7 @@ func AdminAuthGuard(config AdminServerConfig) func(http.Handler) http.Handler {
             return
         }
 
-        if getCurrentIss(config, r) != payload.Iss {
+        if r.Host != payload.Iss {
             zap.L().Error("Unauthorized: Invalid Issuer", zap.Error(err))
             http.Error(w, "Unauthorized: Invalid Issuer", http.StatusUnauthorized)
             return
@@ -92,34 +92,32 @@ func AdminAuthGuard(config AdminServerConfig) func(http.Handler) http.Handler {
 }
 }
 
-func GenerateTokenPayload(config AdminServerConfig) func(http.ResponseWriter, *http.Request) {
-    return func (w http.ResponseWriter, r *http.Request) {
-        var requestBody TokenPayloadRequest
-        if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
-            http.Error(w, "Bad Request", http.StatusBadRequest)
-            return
-        }
-
-        payload := TokenPayload{
-            Iss: getCurrentIss(config, r),
-            Iat: time.Now().Unix(),
-            Sub: requestBody.Address,
-        }
-
-        payloadBytes, err := json.Marshal(payload)
-        if err != nil {
-            http.Error(w, "Failed to marshal JSON", http.StatusInternalServerError)
-            return
-        }
-        encodedPayload := base64.RawURLEncoding.EncodeToString(payloadBytes)
-
-        tokenPayloadResponse := TokenPayloadResponse{
-            Payload: encodedPayload,
-        }
-
-        w.Header().Set("Content-Type", "application/json")
-        json.NewEncoder(w).Encode(tokenPayloadResponse)
+func GenerateTokenPayload(w http.ResponseWriter, r *http.Request) {
+    var requestBody TokenPayloadRequest
+    if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+        http.Error(w, "Bad Request", http.StatusBadRequest)
+        return
     }
+
+    payload := TokenPayload{
+        Iss: r.Host,
+        Iat: time.Now().Unix(),
+        Sub: requestBody.Address,
+    }
+
+    payloadBytes, err := json.Marshal(payload)
+    if err != nil {
+        http.Error(w, "Failed to marshal JSON", http.StatusInternalServerError)
+        return
+    }
+    encodedPayload := base64.RawURLEncoding.EncodeToString(payloadBytes)
+
+    tokenPayloadResponse := TokenPayloadResponse{
+        Payload: encodedPayload,
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(tokenPayloadResponse)
 }
 
 func parseAuthorizationHeader(authHeader string) ([]byte, []byte, error) {
@@ -177,12 +175,4 @@ func containsStringIgnoreCase(arr []string, toFind string) bool {
        }
     }
     return false
-}
-
-func getCurrentIss(config AdminServerConfig, r *http.Request) string {
-    if config.Domain != "" {
-        return config.Domain
-    }
-
-    return r.Host
 }
