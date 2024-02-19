@@ -53,8 +53,6 @@ func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server
 		port = config.Port
 	}
 
-    zap.L().Warn("BasePath", zap.String("path", config.BasePath))
-
     var handler http.Handler = configureCors(r, config)
 
 	return &Server{

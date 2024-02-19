@@ -62,7 +62,7 @@ func AdminAuthGuard(config AdminServerConfig) func(http.Handler) http.Handler {
         }
 
         if r.Host != payload.Iss {
-            zap.L().Error("Unauthorized: Invalid Issuer", zap.Error(err))
+            zap.L().Error("Unauthorized: Invalid Issuer", zap.String("got", payload.Iss), zap.String("want", r.Host), zap.Error(err))
             http.Error(w, "Unauthorized: Invalid Issuer", http.StatusUnauthorized)
             return
         }
