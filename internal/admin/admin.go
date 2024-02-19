@@ -38,7 +38,7 @@ func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server
 		zapmw.Recoverer(zapcore.ErrorLevel, "recover", zapmw.RecovererDefault),
 	)
 
-    r.HandleFunc(config.BasePath + "/admin/auth/token", GenerateTokenPayload).Methods("POST")
+    r.HandleFunc(config.BasePath + "/admin/auth/token", GenerateTokenPayload(config)).Methods("POST")
 
     adminRouter := r.PathPrefix(config.BasePath + "/admin").Subrouter()
 	adminRouter.Use(AdminAuthGuard(config))
