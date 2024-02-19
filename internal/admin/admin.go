@@ -1,7 +1,6 @@
 package admin
 
 import (
-    "encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/rpcgateway"
 	"github.com/gorilla/mux"
 	"github.com/purini-to/zapmw"
+	"github.com/rs/cors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v2"
@@ -18,12 +18,6 @@ import (
 
 type Server struct {
 	server *http.Server
-}
-
-type TargetInfo struct {
-    Name        string `json:"name"`
-    Disabled    bool   `json:"disabled"`
-    BlockNumber uint64 `json:"blockNumber"`
 }
 
 func (s *Server) Start() error {
@@ -35,12 +29,6 @@ func (s *Server) Stop() error {
 	return s.server.Close()
 }
 
-type DefaultHandler struct{}
-func (h DefaultHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-    zap.L().Warn("request path not found", zap.String("path", r.URL.Path))
-    http.NotFound(w, r)
-}
-
 func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server {
 	r := mux.NewRouter()
 
@@ -50,10 +38,13 @@ func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server
 		zapmw.Recoverer(zapcore.ErrorLevel, "recover", zapmw.RecovererDefault),
 	)
 
-    adminRouter := r.PathPrefix(config.BasePath + "/admin").Subrouter()
+    r.HandleFunc(config.BasePath + "/admin/auth/token", GenerateTokenPayload).Methods("POST")
 
-	adminRouter.HandleFunc("/targets/{name}", updateTargetHandler(gateway)).Methods("OPTIONS", "POST")
-	adminRouter.HandleFunc("/targets", getTargetsHandler(gateway)).Methods("GET")
+    adminRouter := r.PathPrefix(config.BasePath + "/admin").Subrouter()
+	adminRouter.Use(AdminAuthGuard(config))
+
+	adminRouter.HandleFunc("/targets/{name}", UpdateTargetHandler(gateway)).Methods("POST")
+	adminRouter.HandleFunc("/targets", GetTargetsHandler(gateway)).Methods("GET")
 
     r.PathPrefix("/").Handler(DefaultHandler{})
 
@@ -62,9 +53,11 @@ func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server
 		port = config.Port
 	}
 
+    var handler http.Handler = configureCors(r, config)
+
 	return &Server{
 		server: &http.Server{
-			Handler:           r,
+			Handler:           handler,
 			Addr:              fmt.Sprintf(":%d", port),
 			WriteTimeout:      15 * time.Second,
 			ReadTimeout:       15 * time.Second,
@@ -96,55 +89,22 @@ func NewAdminServerConfigFromString(configString string) (*AdminServerConfig, er
 	return NewAdminServerConfigFromBytes([]byte(configString))
 }
 
+func configureCors(handler http.Handler, config AdminServerConfig) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-func getTargetsHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-		var targetInfos []TargetInfo
-
-        var targetConfigs = rpcgateway.GetTargetConfigs()
-		for _, target := range targetConfigs {
-			targetInfo := TargetInfo{
-				Name:     target.Name,
-				Disabled: target.IsDisabled,
-				BlockNumber: rpcgateway.GetBlockNumberByName(target.Name),
-			}
-
-			targetInfos = append(targetInfos, targetInfo)
+		if config.Cors.AllowedOrigins != "" {
+			cors := cors.New(cors.Options{
+				AllowedOrigins: strings.Split(config.Cors.AllowedOrigins, ","),
+			})
+			handler = cors.Handler(handler)
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(targetInfos)
-	}
+		handler.ServeHTTP(w, r)
+	})
 }
 
-func updateTargetHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		targetName := strings.TrimPrefix(r.URL.Path, "/admin/targets/")
-		if targetName == "" {
-			http.Error(w, "Target name not provided", http.StatusBadRequest)
-			return
-		}
-
-		found := rpcgateway.GetTargetConfigByName(targetName)
-		if found == nil {
-			http.Error(w, "Target not found", http.StatusNotFound)
-			return
-		}
-
-        var requestBody struct {
-			Disabled *bool `json:"disabled"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
-			http.Error(w, "Failed to decode JSON body", http.StatusBadRequest)
-			return
-		}
-		if requestBody.Disabled == nil {
-            http.Error(w, "Field 'disabled' is missing", http.StatusBadRequest)
-            return
-        }
-
-		rpcgateway.UpdateTargetStatus(found, *requestBody.Disabled)
-
-		w.WriteHeader(http.StatusNoContent)
-	}
+type DefaultHandler struct{}
+func (h DefaultHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    zap.L().Warn("Not found", zap.String("path", r.URL.Path))
+    http.NotFound(w, r)
 }
