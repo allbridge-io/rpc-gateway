@@ -103,3 +103,69 @@ We should build multi-arch image so the image can be run in both `arm64` and `am
 TAG="$(git rev-parse HEAD)"
 docker buildx build --platform linux/amd64,linux/arm64 -t 883408475785.dkr.ecr.us-east-1.amazonaws.com/rpc-gateway:${TAG} --push .
 ```
+
+## Runtime configuration
+
+Targets can be enabled or disabled at runtime using the Admin API.
+
+### Configuration
+
+```yaml
+admin:
+  admins: # a list of addresses allowed to access Admin API
+    - 0x6Dcbf665293BDDe2237c1A6Af41fd70E969883F0
+  basePath: "" # path prefix where to serve the API. Optional
+  maxTokenLifespan: 86400 # authorization token lifespan in seconds. Optional
+  port: 7926 # port for the API, served on /admin. Optional
+```
+
+### Authentication request
+
+POST '/admin/auth/token'
+
+Request body params:
+
+- **address**: Ethereum address of the user
+
+Response body:
+
+- **payload**: Base64url encoded challenge
+
+The endpoint serves to issue a challenge, which must be signed to demonstrate the user's control over the specified
+Ethereum address. Forming an authentication token involves concatenating the challenge, encoded with base64url, with a
+period ('.'), and appending it with the signature, also encoded with base64url. Formed authentication token must be sent
+as a bearer token in the `Authorization` header to access the API.
+
+### List available targets request
+
+GET '/admin/targets'
+
+Request headers:
+
+- **Authorization**: Header format is `Bearer token` where `token` is the token formed after the authentication request.
+
+Response body:
+
+The response body consists of an array of available RPC nodes. Each element includes the following attributes:
+
+- **name**: the name of the target.
+- **blockNumber**: last block number known to the RPC node.
+- **disabled**: is RPC node disabled.
+
+### Change target status request
+
+POST '/admin/targets/:name'
+
+Request path params:
+
+- **name**: target name
+
+Request headers:
+
+- **Authorization**: Header format is `Bearer token` where `token` is the token formed after the authentication request.
+
+Request body:
+
+- **disabled**: new status
+
+Updates specified target's status. Requests are not redirected by the RPC gateway to the disabled target.

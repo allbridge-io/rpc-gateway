@@ -1,11 +1,11 @@
 package admin
 
 type AdminServerConfig struct {
-	Port             uint     `yaml:"port"`
 	Admins           []string `yaml:"admins"`
-	MaxTokenLifespan uint     `yaml:"maxTokenLifespan"`
-	Domain           string   `yaml:"domain"`
 	BasePath         string   `yaml:"basePath"`
+	Domain           string   `yaml:"domain"`
+	MaxTokenLifespan uint     `yaml:"maxTokenLifespan"`
+	Port             uint     `yaml:"port"`
 }
 
 type Config struct { //nolint:revive
