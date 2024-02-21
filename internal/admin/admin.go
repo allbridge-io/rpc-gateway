@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/0xProject/rpc-gateway/internal/rpcgateway"
 	"github.com/gorilla/mux"
 	"github.com/purini-to/zapmw"
+	"github.com/rs/cors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v2"
@@ -51,9 +53,17 @@ func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server
 		port = config.Port
 	}
 
+    var handler http.Handler = r
+    if config.Cors.AllowedOrigins != "" {
+        cors := cors.New(cors.Options{
+            AllowedOrigins: strings.Split(config.Cors.AllowedOrigins, ","),
+        })
+        handler = cors.Handler(handler)
+    }
+
 	return &Server{
 		server: &http.Server{
-			Handler:           r,
+			Handler:           handler,
 			Addr:              fmt.Sprintf(":%d", port),
 			WriteTimeout:      15 * time.Second,
 			ReadTimeout:       15 * time.Second,
