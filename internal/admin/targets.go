@@ -4,8 +4,6 @@ import (
     "encoding/json"
 	"net/http"
 	"strings"
-
-	"github.com/0xProject/rpc-gateway/internal/rpcgateway"
 )
 
 type TargetInfo struct {
@@ -14,16 +12,16 @@ type TargetInfo struct {
     BlockNumber uint64 `json:"blockNumber"`
 }
 
-func GetTargetsHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
+func GetTargetsHandler(targetManager TargetManager) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
 		var targetInfos []TargetInfo
 
-        var targetConfigs = rpcgateway.GetTargetConfigs()
+        var targetConfigs = targetManager.GetTargetConfigs()
 		for _, target := range targetConfigs {
 			targetInfo := TargetInfo{
 				Name:     target.Name,
 				Disabled: target.IsDisabled,
-				BlockNumber: rpcgateway.GetBlockNumberByName(target.Name),
+				BlockNumber: targetManager.GetBlockNumberByName(target.Name),
 			}
 
 			targetInfos = append(targetInfos, targetInfo)
@@ -34,7 +32,7 @@ func GetTargetsHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
 	}
 }
 
-func UpdateTargetHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
+func UpdateTargetHandler(targetManager TargetManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(r.URL.Path, "/")
         targetName := parts[len(parts)-1]
@@ -43,7 +41,7 @@ func UpdateTargetHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
 			return
 		}
 
-		found := rpcgateway.GetTargetConfigByName(targetName)
+		found := targetManager.GetTargetConfigByName(targetName)
 		if found == nil {
 			http.Error(w, "Target not found", http.StatusNotFound)
 			return
@@ -61,7 +59,7 @@ func UpdateTargetHandler(rpcgateway *rpcgateway.RPCGateway) http.HandlerFunc {
             return
         }
 
-		rpcgateway.UpdateTargetStatus(found, *requestBody.Disabled)
+		targetManager.UpdateTargetStatus(found, *requestBody.Disabled)
 
 		w.WriteHeader(http.StatusNoContent)
 	}

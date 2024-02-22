@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xProject/rpc-gateway/internal/rpcgateway"
+	"github.com/0xProject/rpc-gateway/internal/proxy"
 	"github.com/gorilla/mux"
 	"github.com/purini-to/zapmw"
 	"github.com/rs/cors"
@@ -15,6 +15,13 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v2"
 )
+
+type TargetManager interface {
+    GetBlockNumberByName(name string) uint64
+    GetTargetConfigs() []proxy.TargetConfig
+    GetTargetConfigByName(name string) *proxy.TargetConfig
+    UpdateTargetStatus(targetconfig *proxy.TargetConfig, isDisabled bool)
+}
 
 type Server struct {
 	server *http.Server
@@ -29,7 +36,7 @@ func (s *Server) Stop() error {
 	return s.server.Close()
 }
 
-func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server {
+func NewServer(config AdminServerConfig, targetManager TargetManager) *Server {
 	r := mux.NewRouter()
 
 	r.Use(
@@ -43,8 +50,8 @@ func NewServer(config AdminServerConfig, gateway *rpcgateway.RPCGateway) *Server
     adminRouter := r.PathPrefix(config.BasePath + "/admin").Subrouter()
 	adminRouter.Use(AdminAuthGuard(config))
 
-	adminRouter.HandleFunc("/targets/{name}", UpdateTargetHandler(gateway)).Methods("POST")
-	adminRouter.HandleFunc("/targets", GetTargetsHandler(gateway)).Methods("GET")
+	adminRouter.HandleFunc("/targets/{name}", UpdateTargetHandler(targetManager)).Methods("POST")
+	adminRouter.HandleFunc("/targets", GetTargetsHandler(targetManager)).Methods("GET")
 
     r.PathPrefix("/").Handler(DefaultHandler{})
 
