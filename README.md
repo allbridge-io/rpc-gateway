@@ -115,7 +115,7 @@ admin:
   admins: # a list of addresses allowed to access Admin API
     - 0x6Dcbf665293BDDe2237c1A6Af41fd70E969883F0
   basePath: "" # path prefix where to serve the API. Optional
-  maxTokenLifespan: 86400 # authorization token lifespan in seconds. Optional
+  maxTokenLifespan: 3600 # authorization token lifespan in seconds. Optional
   port: 7926 # port for the API, served on /admin. Optional
 ```
 

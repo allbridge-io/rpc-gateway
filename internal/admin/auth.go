@@ -14,7 +14,7 @@ import (
 )
 
 const (
-    DefaultMaxTokenLifespan = 86400 // Default maximum token lifespan in seconds (24 hours)
+    DefaultMaxTokenLifespan = 3600 // Default maximum token lifespan in seconds (1 hour)
 )
 
 type TokenPayload struct {
