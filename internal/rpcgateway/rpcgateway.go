@@ -93,6 +93,26 @@ func (r *RPCGateway) GetCurrentTarget() string {
 	return r.httpFailoverProxy.GetNextTargetName()
 }
 
+func (r *RPCGateway) GetBlockNumberByName(name string) uint64 {
+    healthChecker := r.healthcheckManager.GetTargetByName(name)
+    if healthChecker != nil {
+        return healthChecker.BlockNumber()
+    }
+    return 0
+}
+
+func (h *RPCGateway) GetTargetConfigs() []proxy.TargetConfig {
+    return h.httpFailoverProxy.GetTargetConfigs()
+}
+
+func (h *RPCGateway) GetTargetConfigByName(name string) *proxy.TargetConfig {
+    return h.httpFailoverProxy.GetTargetConfigByName(name)
+}
+
+func (r *RPCGateway) UpdateTargetStatus(targetconfig *proxy.TargetConfig, isDisabled bool) {
+    targetconfig.IsDisabled = isDisabled
+}
+
 func NewRPCGateway(config RPCGatewayConfig) *RPCGateway {
 	healthcheckManager := proxy.NewHealthcheckManager(
 		proxy.HealthcheckManagerConfig{

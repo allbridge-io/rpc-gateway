@@ -39,6 +39,7 @@ type Exception struct {
 type TargetConfig struct {
 	Name       string                 `yaml:"name"`
 	Connection TargetConfigConnection `yaml:"connection"`
+	IsDisabled bool                   `yaml:"disabled"`
 }
 
 // This struct is temporary. It's about to keep the input interface clean and simple.
