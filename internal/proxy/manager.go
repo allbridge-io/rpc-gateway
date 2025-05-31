@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"slices"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
@@ -208,29 +206,36 @@ func (h *HealthcheckManager) GetNextHealthyTargetIndex() int {
 }
 
 func (h *HealthcheckManager) GetNextHealthyTargetIndexExcluding(excludedIdx []uint) int {
-
 	totalTargets := len(h.healthcheckers)
 	if totalTargets == 0 {
 		zap.L().Error("no targets")
 		return -1
 	}
 
-	idx := 0
+	// Convert excludedIdx slice to a set for O(1) lookups
+	excluded := make(map[uint]struct{}, len(excludedIdx))
+	for _, i := range excludedIdx {
+		excluded[i] = struct{}{}
+	}
+
+	// Choose random starting index if enabled
+	startIdx := 0
 	if h.enableRandomization {
-		idx = rand.Intn(totalTargets)
+		startIdx = rand.Intn(totalTargets)
 	}
 
-	delta := 0
-	for delta < totalTargets {
-		adjustedIndex := (idx + delta) % totalTargets
-		target := h.healthcheckers[adjustedIndex]
-		if !slices.Contains(excludedIdx, uint(adjustedIndex)) && target.IsHealthy() {
-			return adjustedIndex
+	// Iterate over all targets once
+	for i := 0; i < totalTargets; i++ {
+		idx := (startIdx + i) % totalTargets
+		if _, skip := excluded[uint(idx)]; skip {
+			continue
 		}
-		delta++
+		if h.healthcheckers[idx].IsHealthy() {
+			return idx
+		}
 	}
 
-	// no healthy targets, we down:(
 	zap.L().Error("no more healthy targets")
 	return -1
 }
+
