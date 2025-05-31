@@ -17,6 +17,7 @@ type HealthcheckManagerConfig struct {
 	Targets []TargetConfig
 	Config  HealthCheckConfig
 	Solana  bool
+	Proxy   ProxyConfig
 }
 
 type HealthcheckManager struct {
@@ -27,12 +28,15 @@ type HealthcheckManager struct {
 	metricResponseTime           *prometheus.HistogramVec
 	metricRPCProviderBlockNumber *prometheus.GaugeVec
 	metricRPCProviderGasLimit    *prometheus.GaugeVec
+
+	enableRandomization bool
 }
 
 func NewHealthcheckManager(config HealthcheckManagerConfig) *HealthcheckManager {
 	healthCheckers := []Healthchecker{}
 
 	healthcheckManager := &HealthcheckManager{
+		enableRandomization: config.Proxy.EnableRandomization,
 		metricRPCProviderInfo: promauto.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "zeroex_rpc_gateway_provider_info",
@@ -211,7 +215,11 @@ func (h *HealthcheckManager) GetNextHealthyTargetIndexExcluding(excludedIdx []ui
 		return -1
 	}
 
-	idx := rand.Intn(totalTargets)
+	idx := 0
+	if h.enableRandomization {
+		idx = rand.Intn(totalTargets)
+	}
+
 	delta := 0
 	for delta < totalTargets {
 		adjustedIndex := (idx + delta) % totalTargets
