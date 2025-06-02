@@ -11,9 +11,10 @@ type HealthCheckConfig struct {
 	SuccessThreshold uint          `yaml:"successThreshold"`
 }
 
-type ProxyConfig struct { // nolint:revive
+type ProxyConfig struct {
 	Port            string        `yaml:"port"`
 	UpstreamTimeout time.Duration `yaml:"upstreamTimeout"`
+	EnableRandomization bool      `yaml:"enableRandomization"`
 }
 
 type TargetConnectionHTTP struct {

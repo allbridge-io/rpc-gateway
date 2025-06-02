@@ -4,6 +4,7 @@ metrics:
 proxy:
   port: 3000 # port for RPC gateway
   upstreamTimeout: "1s" # when is a request considered timed out
+  enableRandomization: true
 
 healthChecks:
   interval: "5s" # how often to do healthchecks
@@ -12,14 +13,19 @@ healthChecks:
   successThreshold: 1 # how many successes to be marked as healthy again
 
 targets:
-  - name: "QuickNode"
+  - name: "Blastapi"
     connection:
       http: # ws is supported by default, it will be a sticky connection.
-        url: "https://rpc.ankr.com/eth"
+        url: "https://eth-mainnet.public.blastapi.io"
         # compression: true # Specify if the target supports request compression
       # optional ws url for Solana configuration
       ws:
         url: "wss://solana.ws.node"
+  - name: "Flashbots"
+    connection:
+      http:
+        url: "https://rpc.flashbots.net/"
+
 
 exceptions:
 #   String to match in the response body

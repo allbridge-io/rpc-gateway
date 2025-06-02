@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"slices"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
@@ -17,6 +15,7 @@ type HealthcheckManagerConfig struct {
 	Targets []TargetConfig
 	Config  HealthCheckConfig
 	Solana  bool
+	Proxy   ProxyConfig
 }
 
 type HealthcheckManager struct {
@@ -27,12 +26,15 @@ type HealthcheckManager struct {
 	metricResponseTime           *prometheus.HistogramVec
 	metricRPCProviderBlockNumber *prometheus.GaugeVec
 	metricRPCProviderGasLimit    *prometheus.GaugeVec
+
+	enableRandomization bool
 }
 
 func NewHealthcheckManager(config HealthcheckManagerConfig) *HealthcheckManager {
 	healthCheckers := []Healthchecker{}
 
 	healthcheckManager := &HealthcheckManager{
+		enableRandomization: config.Proxy.EnableRandomization,
 		metricRPCProviderInfo: promauto.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "zeroex_rpc_gateway_provider_info",
@@ -204,25 +206,36 @@ func (h *HealthcheckManager) GetNextHealthyTargetIndex() int {
 }
 
 func (h *HealthcheckManager) GetNextHealthyTargetIndexExcluding(excludedIdx []uint) int {
-
 	totalTargets := len(h.healthcheckers)
 	if totalTargets == 0 {
 		zap.L().Error("no targets")
 		return -1
 	}
 
-	idx := rand.Intn(totalTargets)
-	delta := 0
-	for delta < totalTargets {
-		adjustedIndex := (idx + delta) % totalTargets
-		target := h.healthcheckers[adjustedIndex]
-		if !slices.Contains(excludedIdx, uint(adjustedIndex)) && target.IsHealthy() {
-			return adjustedIndex
-		}
-		delta++
+	// Convert excludedIdx slice to a set for O(1) lookups
+	excluded := make(map[uint]struct{}, len(excludedIdx))
+	for _, i := range excludedIdx {
+		excluded[i] = struct{}{}
 	}
 
-	// no healthy targets, we down:(
+	// Choose random starting index if enabled
+	startIdx := 0
+	if h.enableRandomization {
+		startIdx = rand.Intn(totalTargets)
+	}
+
+	// Iterate over all targets once
+	for i := 0; i < totalTargets; i++ {
+		idx := (startIdx + i) % totalTargets
+		if _, skip := excluded[uint(idx)]; skip {
+			continue
+		}
+		if h.healthcheckers[idx].IsHealthy() {
+			return idx
+		}
+	}
+
 	zap.L().Error("no more healthy targets")
 	return -1
 }
+

@@ -98,6 +98,7 @@ func NewRPCGateway(config RPCGatewayConfig) *RPCGateway {
 		proxy.HealthcheckManagerConfig{
 			Targets: config.Targets,
 			Config:  config.HealthChecks,
+			Proxy: config.Proxy,
 			Solana:  config.Solana,
 		})
 	httpFailoverProxy := proxy.NewProxy(
