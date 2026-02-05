@@ -250,10 +250,39 @@ func (h *Proxy) GetNextTargetName() string {
 	return h.GetNextTarget().Config.Name
 }
 
+func (h *Proxy) GetDisabledTargetIndexes() []uint {
+	var indexes []uint
+	for i, target := range h.targets {
+		if target.Config.IsDisabled {
+			indexes = append(indexes, uint(i))
+		}
+	}
+	return indexes
+}
+
+func (h *Proxy) GetTargetConfigs() []TargetConfig {
+	var configs []TargetConfig
+	for _, target := range h.targets {
+		configs = append(configs, target.Config)
+	}
+	return configs
+}
+
+func (h *Proxy) GetTargetConfigByName(name string) *TargetConfig {
+	for _, target := range h.targets {
+	    if target.Config.Name == name {
+            return &target.Config
+	    }
+	}
+	return nil
+}
+
 func (h *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	visitedTargets := GetVisitedTargetsFromContext(r)
+	disabledTargets := h.GetDisabledTargetIndexes()
+    excludedIndexes := append(visitedTargets, disabledTargets...)
 
-	peer := h.GetNextTargetExcluding(visitedTargets)
+	peer := h.GetNextTargetExcluding(excludedIndexes)
 	if peer != nil {
 		start := time.Now()
 		isWS := r.Header.Get("Upgrade") != "" && peer.WsProxy != nil

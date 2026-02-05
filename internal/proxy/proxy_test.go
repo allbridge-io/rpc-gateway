@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -478,6 +479,62 @@ func TestHTTPFailoverProxyWhenCannotConnectToPrimaryProvider(t *testing.T) {
 
 	want := `{"this_is": "body"}`
 	if rr.Body.String() != want {
+		t.Errorf("server returned unexpected body: got '%v' want '%v'", rr.Body.String(), want)
+	}
+}
+
+func TestHTTPFailoverProxyWhenPrimaryProviderDisabled(t *testing.T) {
+	prometheus.DefaultRegisterer = prometheus.NewRegistry()
+
+	fakeRPCServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Write(body)
+	}))
+	defer fakeRPCServer.Close()
+
+	rpcGatewayConfig := createConfig()
+
+	rpcGatewayConfig.Targets = []TargetConfig{
+		{
+			Name: "Server1",
+			Connection: TargetConfigConnection{
+				HTTP: TargetConnectionHTTP{
+					URL: fakeRPCServer.URL,
+				},
+			},
+			IsDisabled: true,
+		},
+	}
+	rpcGatewayConfig.Exceptions = []Exception{
+		{
+			Match:   "error match string",
+			Message: "error message",
+		},
+	}
+	healthcheckManager := NewHealthcheckManager(HealthcheckManagerConfig{
+		Targets: rpcGatewayConfig.Targets,
+		Config:  rpcGatewayConfig.HealthChecks,
+	})
+
+	httpFailoverProxy := NewProxy(rpcGatewayConfig, healthcheckManager)
+
+	requestBody := bytes.NewBufferString(`{"this_is": "body"}`)
+	req, err := http.NewRequest("POST", "/", requestBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(httpFailoverProxy.ServeHTTP)
+
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusServiceUnavailable {
+		t.Errorf("server returned wrong status code: got %v want %v", status, http.StatusOK)
+	}
+
+	want := `Service not available`
+	if strings.TrimRight(rr.Body.String(), " \n\t") != want {
 		t.Errorf("server returned unexpected body: got '%v' want '%v'", rr.Body.String(), want)
 	}
 }
