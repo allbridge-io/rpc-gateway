@@ -256,7 +256,14 @@ func (h *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	peer := h.GetNextTargetExcluding(visitedTargets)
 	if peer != nil {
 		start := time.Now()
-		if r.Header.Get("Upgrade") != "" && peer.WsProxy != nil {
+		isWS := r.Header.Get("Upgrade") != "" && peer.WsProxy != nil
+		w.Header().Set("X-Rpc-Provider", peer.Config.Name)
+		//if isWS {
+		//	w.Header().Set("X-Rpc-Target-Url", peer.Config.Connection.WS.URL)
+		//} else {
+		//	w.Header().Set("X-Rpc-Target-Url", peer.Config.Connection.HTTP.URL)
+		//}
+		if isWS {
 			peer.WsProxy.ServeHTTP(w, r)
 		} else {
 			peer.Proxy.ServeHTTP(w, r)
