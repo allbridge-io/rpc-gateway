@@ -1,0 +1,74 @@
+# RPC gateway configuration.
+#
+# Copy to config.local.toml for local runs (git-ignored) and point CONFIG_TOML_PATH at it.
+# On Render the file is stored as a secret file and mounted at /etc/secrets/<name>.
+#
+# Any value may reference an environment variable as ${NAME}; an unset variable
+# is a startup error. Sources are merged in this order, later ones win:
+#   CONFIG_TOML_PATH  <  SECRET_CONFIG_TOML_PATH  <  CONFIG_OVERRIDE_TOML (inline)  <  PORT
+#
+# Each chain is served on its own path prefix: POST http://host:port/<CHAIN_KEY>
+# WebSocket clients connect to ws://host:port/<CHAIN_KEY> (Solana).
+
+[server]
+port = 3000                 # overridden by PORT env (Render sets it)
+upstream_timeout = "5s"     # max wait for a target to start responding before failover
+read_timeout = "15s"
+write_timeout = "30s"
+shutdown_timeout = "10s"
+
+[healthchecks]
+interval = "5s"             # how often each target is checked
+timeout = "3s"              # single check timeout
+failure_threshold = 2       # consecutive failures -> unhealthy
+success_threshold = 1       # consecutive successes -> healthy again
+max_block_lag = 20          # unhealthy when this many blocks behind the best target of the chain
+
+# Response body fragments that count as a target failure (request is retried on another target).
+[[exceptions]]
+match = "socket hang up"
+[[exceptions]]
+match = "missing response for request"
+[[exceptions]]
+match = "cannot query unfinalized data"
+
+# ============================== EVM chains ==============================
+[chains.SPL]                # Ethereum Sepolia
+type = "evm"
+chain_id = "0xaa36a7"       # optional: expected eth_chainId, checked by testnet tests
+[[chains.SPL.targets]]      # order = failover priority is NOT implied; a random healthy target is used
+name = "PublicNode"
+http_url = "https://ethereum-sepolia-rpc.publicnode.com"
+[[chains.SPL.targets]]
+name = "Alchemy"
+http_url = "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+disabled = true             # kept in config but not routed to
+
+[chains.ARB]                # Arbitrum Sepolia
+type = "evm"
+chain_id = "0x66eee"
+[[chains.ARB.targets]]
+name = "Arbitrum"
+http_url = "https://sepolia-rollup.arbitrum.io/rpc"
+
+[chains.TRX]                # Tron Shasta (JSON-RPC compatible endpoint)
+type = "evm"
+max_block_lag = 5
+[[chains.TRX.targets]]
+name = "TronGrid"
+http_url = "https://api.shasta.trongrid.io/jsonrpc"
+
+# ============================== Solana ==============================
+[chains.SOL]                # Solana devnet
+type = "solana"
+max_block_lag = 100         # slots move every ~400ms, allow a wider gap
+[[chains.SOL.exceptions]]
+match = "Blockhash not found"
+message = "Solana: Blockhash not found"
+[[chains.SOL.exceptions]]
+match = "block height exceeded"
+message = "Solana: block height exceeded"
+[[chains.SOL.targets]]
+name = "Public"
+http_url = "https://api.devnet.solana.com"
+ws_url = "wss://api.devnet.solana.com"
