@@ -2,227 +2,323 @@ package proxy
 
 import (
 	"context"
-	"math/rand"
-	"strconv"
+	"fmt"
+	"math/rand/v2"
+	"net/http"
+	"sync"
 	"time"
 
-	"slices"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.uber.org/zap"
+	"github.com/0xProject/rpc-gateway/internal/config"
+	"github.com/0xProject/rpc-gateway/internal/events"
 )
 
-type HealthcheckManagerConfig struct {
-	Targets []TargetConfig
-	Config  HealthCheckConfig
-	Solana  bool
+// HealthOptions configures a Manager.
+type HealthOptions struct {
+	Interval         time.Duration
+	Timeout          time.Duration
+	FailureThreshold uint
+	SuccessThreshold uint
+	// MaxBlockLag marks a target unhealthy when it is more than this many blocks
+	// behind the best target of the chain. 0 disables the check.
+	MaxBlockLag uint64
+	// TaintDuration is how long Taint excludes a target. 0 disables tainting.
+	TaintDuration time.Duration
+	// Client performs health check calls. Optional.
+	Client *http.Client
+	// Now returns the current time. Optional, for tests.
+	Now func() time.Time
 }
 
-type HealthcheckManager struct {
-	healthcheckers []Healthchecker
-
-	metricRPCProviderInfo        *prometheus.GaugeVec
-	metricRPCProviderStatus      *prometheus.GaugeVec
-	metricResponseTime           *prometheus.HistogramVec
-	metricRPCProviderBlockNumber *prometheus.GaugeVec
-	metricRPCProviderGasLimit    *prometheus.GaugeVec
+// TargetStatus is a snapshot of one target, used by the /status endpoint and tests.
+type TargetStatus struct {
+	Name     string `json:"name"`
+	Disabled bool   `json:"disabled"`
+	// Routable is the final verdict: requests are sent to the target.
+	Routable bool `json:"routable"`
+	// CheckHealthy reflects consecutive check results only.
+	CheckHealthy        bool      `json:"checkHealthy"`
+	Lagging             bool      `json:"lagging"`
+	Tainted             bool      `json:"tainted"`
+	TaintReason         string    `json:"taintReason,omitempty"`
+	BlockNumber         uint64    `json:"blockNumber"`
+	Lag                 uint64    `json:"lag"`
+	LastError           string    `json:"lastError,omitempty"`
+	LastCheck           time.Time `json:"lastCheck"`
+	ConsecutiveFailures uint      `json:"consecutiveFailures"`
 }
 
-func NewHealthcheckManager(config HealthcheckManagerConfig) *HealthcheckManager {
-	healthCheckers := []Healthchecker{}
+type targetState struct {
+	cfg config.Target
 
-	healthcheckManager := &HealthcheckManager{
-		metricRPCProviderInfo: promauto.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "zeroex_rpc_gateway_provider_info",
-				Help: "Gas limit of a given provider",
-			}, []string{
-				"index",
-				"provider",
-			}),
-		metricRPCProviderStatus: promauto.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "zeroex_rpc_gateway_provider_status",
-				Help: "Current status of a given provider by type. Type can be either healthy or tainted.",
-			}, []string{
-				"provider",
-				"type",
-			}),
-		metricResponseTime: promauto.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name: "zeroex_rpc_gateway_healthcheck_response_duration_seconds",
-				Help: "Histogram of response time for Gateway Healthchecker in seconds",
-				Buckets: []float64{
-					.005,
-					.01,
-					.025,
-					.05,
-					.1,
-					.25,
-					.5,
-					1,
-					2.5,
-					5,
-					10,
-				},
-			}, []string{
-				"provider",
-				"method",
-			}),
-		metricRPCProviderBlockNumber: promauto.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "zeroex_rpc_gateway_provider_block_number",
-				Help: "Block number of a given provider",
-			}, []string{
-				"provider",
-			}),
-		metricRPCProviderGasLimit: promauto.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "zeroex_rpc_gateway_provider_gasLimit_number",
-				Help: "Gas limit of a given provider",
-			}, []string{
-				"provider",
-			}),
+	mu           sync.Mutex
+	healthy      bool // by consecutive check results
+	lagging      bool
+	taintedUntil time.Time
+	taintReason  string
+	block        uint64
+	lag          uint64
+	lastErr      string
+	lastCheck    time.Time
+	failures     uint
+	successes    uint
+}
+
+type checkResult struct {
+	block uint64
+	err   error
+}
+
+// Manager runs health checks for the targets of one chain and answers the
+// question "which target may receive the next request?".
+//
+// A target is routable when all of these hold:
+//   - it is not disabled in the config
+//   - its last FailureThreshold checks were not all failures (or it recovered
+//     with SuccessThreshold successes)
+//   - it is not lagging behind the best target by more than MaxBlockLag
+//   - it is not tainted by a recent failed request
+type Manager struct {
+	chain    string
+	typ      config.ChainType
+	opts     HealthOptions
+	targets  []*targetState
+	client   *http.Client
+	observer events.Observer
+	now      func() time.Time
+}
+
+// NewManager creates a Manager. Targets start optimistic (healthy) until the
+// first check round says otherwise; call RunOnce before serving traffic.
+func NewManager(chain string, typ config.ChainType, targets []config.Target, opts HealthOptions, observer events.Observer) *Manager {
+	if observer == nil {
+		observer = events.Nop{}
 	}
-
-	for _, target := range config.Targets {
-		healthchecker, err := NewHealthchecker(
-			RPCHealthcheckerConfig{
-				URL:              target.Connection.HTTP.URL,
-				Name:             target.Name,
-				Solana:			  config.Solana,
-				Interval:         config.Config.Interval,
-				Timeout:          config.Config.Timeout,
-				FailureThreshold: config.Config.FailureThreshold,
-				SuccessThreshold: config.Config.SuccessThreshold,
-			})
-
-		healthchecker.SetMetric(MetricBlockNumber, healthcheckManager.metricRPCProviderBlockNumber)
-		healthchecker.SetMetric(MetricGasLimit, healthcheckManager.metricRPCProviderGasLimit)
-		healthchecker.SetMetric(MetricResponseTime, healthcheckManager.metricResponseTime)
-
-		if err != nil {
-			panic(err)
-		}
-
-		healthCheckers = append(healthCheckers, healthchecker)
+	if opts.Now == nil {
+		opts.Now = time.Now
 	}
-
-	healthcheckManager.healthcheckers = healthCheckers
-
-	return healthcheckManager
+	if opts.Client == nil {
+		opts.Client = &http.Client{Timeout: opts.Timeout}
+	}
+	if opts.FailureThreshold == 0 {
+		opts.FailureThreshold = 1
+	}
+	if opts.SuccessThreshold == 0 {
+		opts.SuccessThreshold = 1
+	}
+	m := &Manager{
+		chain:    chain,
+		typ:      typ,
+		opts:     opts,
+		client:   opts.Client,
+		observer: observer,
+		now:      opts.Now,
+	}
+	for _, t := range targets {
+		m.targets = append(m.targets, &targetState{cfg: t, healthy: true})
+	}
+	return m
 }
 
-func (h *HealthcheckManager) runLoop(ctx context.Context) error {
-	ticker := time.NewTicker(1 * time.Second)
+// Len returns the number of targets, disabled ones included.
+func (m *Manager) Len() int { return len(m.targets) }
+
+// Name returns the name of target i.
+func (m *Manager) Name(i int) string { return m.targets[i].cfg.Name }
+
+// Start runs a check round immediately and then every Interval until ctx ends.
+func (m *Manager) Start(ctx context.Context) {
+	m.RunOnce(ctx)
+	ticker := time.NewTicker(m.opts.Interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-ticker.C:
-			h.reportStatusMetrics()
+			m.RunOnce(ctx)
 		}
 	}
 }
 
-func (h *HealthcheckManager) reportStatusMetrics() {
-	for _, healthchecker := range h.healthcheckers {
-		healthy := 0
-		tainted := 0
-		if healthchecker.IsHealthy() {
-			healthy = 1
+// RunOnce checks every enabled target concurrently, then updates health and
+// lag states and emits events for every transition. It is synchronous so tests
+// can drive it deterministically.
+func (m *Manager) RunOnce(ctx context.Context) {
+	results := make([]checkResult, len(m.targets))
+	var wg sync.WaitGroup
+	for i, t := range m.targets {
+		if t.cfg.Disabled {
+			continue
 		}
-		if healthchecker.IsTainted() {
-			tainted = 1
+		wg.Add(1)
+		go func(i int, t *targetState) {
+			defer wg.Done()
+			cctx, cancel := context.WithTimeout(ctx, m.opts.Timeout)
+			defer cancel()
+			block, err := fetchHead(cctx, m.client, t.cfg.HTTPURL, m.typ)
+			results[i] = checkResult{block: block, err: err}
+		}(i, t)
+	}
+	wg.Wait()
+
+	now := m.now()
+	var best uint64
+	for i, t := range m.targets {
+		if t.cfg.Disabled {
+			continue
 		}
-		h.metricRPCProviderStatus.WithLabelValues(healthchecker.Name(), "healthy").Set(float64(healthy))
-		h.metricRPCProviderStatus.WithLabelValues(healthchecker.Name(), "tainted").Set(float64(tainted))
+		m.recordCheck(t, results[i], now)
+		if results[i].err == nil && results[i].block > best {
+			best = results[i].block
+		}
+	}
+	for i, t := range m.targets {
+		if t.cfg.Disabled {
+			continue
+		}
+		m.updateLag(t, results[i], best)
 	}
 }
 
-func (h *HealthcheckManager) Start(ctx context.Context) error {
-	for index, healthChecker := range h.healthcheckers {
-		h.metricRPCProviderInfo.WithLabelValues(strconv.Itoa(index), healthChecker.Name()).Set(1)
-		go healthChecker.Start(ctx)
-	}
-
-	return h.runLoop(ctx)
-}
-
-func (h *HealthcheckManager) Stop(ctx context.Context) error {
-	for _, healthChecker := range h.healthcheckers {
-		err := healthChecker.Stop(ctx)
-		if err != nil {
-			zap.L().Error("healtchecker stop error", zap.Error(err))
+func (m *Manager) recordCheck(t *targetState, r checkResult, now time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.lastCheck = now
+	if r.err != nil {
+		t.failures++
+		t.successes = 0
+		t.lastErr = r.err.Error()
+		if t.healthy && t.failures >= m.opts.FailureThreshold {
+			t.healthy = false
+			reason := fmt.Sprintf("%d consecutive failed checks, last: %s", t.failures, t.lastErr)
+			m.emitHealth(t, reason)
 		}
-	}
-
-	return nil
-}
-
-func (h *HealthcheckManager) GetTargetIndexByName(name string) int {
-	for idx, healthChecker := range h.healthcheckers {
-		if healthChecker.Name() == name {
-			return idx
-		}
-	}
-
-	zap.L().Error("tried to access a non-existing Healthchecker", zap.String("name", name))
-	return 0
-}
-
-func (h *HealthcheckManager) GetTargetByName(name string) Healthchecker {
-	for _, healthChecker := range h.healthcheckers {
-		if healthChecker.Name() == name {
-			return healthChecker
-		}
-	}
-
-	zap.L().Error("tried to access a non-existing Healthchecker", zap.String("name", name))
-	return nil
-}
-
-func (h *HealthcheckManager) TaintTarget(name string) {
-	if healthChecker := h.GetTargetByName(name); healthChecker != nil {
-		healthChecker.Taint()
 		return
 	}
-}
-
-func (h *HealthcheckManager) IsTargetHealthy(name string) bool {
-	if healthChecker := h.GetTargetByName(name); healthChecker != nil {
-		return healthChecker.IsHealthy()
+	t.successes++
+	t.failures = 0
+	t.lastErr = ""
+	t.block = r.block
+	if !t.healthy && t.successes >= m.opts.SuccessThreshold {
+		t.healthy = true
+		m.emitHealth(t, fmt.Sprintf("recovered after %d consecutive successful checks", t.successes))
 	}
-
-	return false
 }
 
-func (h *HealthcheckManager) GetNextHealthyTargetIndex() int {
-	return h.GetNextHealthyTargetIndexExcluding([]uint{})
+func (m *Manager) updateLag(t *targetState, r checkResult, best uint64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if r.err != nil {
+		// Unknown block this round: lag is not judged, thresholds handle the failure.
+		t.lag = 0
+		if t.lagging {
+			t.lagging = false
+		}
+		return
+	}
+	t.lag = best - r.block
+	lagging := m.opts.MaxBlockLag > 0 && t.lag > m.opts.MaxBlockLag
+	if lagging == t.lagging {
+		return
+	}
+	t.lagging = lagging
+	if !t.healthy {
+		return // already reported as unhealthy by checks; no extra noise
+	}
+	if lagging {
+		m.emitHealth(t, fmt.Sprintf("lagging %d blocks behind the best target (limit %d)", t.lag, m.opts.MaxBlockLag))
+	} else {
+		m.emitHealth(t, "caught up with the best target")
+	}
 }
 
-func (h *HealthcheckManager) GetNextHealthyTargetIndexExcluding(excludedIdx []uint) int {
+// emitHealth reports the routable-by-checks state (healthy && !lagging). Caller holds t.mu.
+func (m *Manager) emitHealth(t *targetState, reason string) {
+	m.observer.TargetHealthChanged(m.chain, t.cfg.Name, t.healthy && !t.lagging, reason)
+}
 
-	totalTargets := len(h.healthcheckers)
-	if totalTargets == 0 {
-		zap.L().Error("no targets")
+// IsRoutable tells whether target i may receive a request right now.
+func (m *Manager) IsRoutable(i int) bool {
+	t := m.targets[i]
+	if t.cfg.Disabled {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.healthy && !t.lagging && !m.now().Before(t.taintedUntil)
+}
+
+// NextRoutable picks a random routable target whose index is not in excluded.
+// Returns -1 when there is none.
+func (m *Manager) NextRoutable(excluded []int) int {
+	n := len(m.targets)
+	if n == 0 {
 		return -1
 	}
-
-	idx := rand.Intn(totalTargets)
-	delta := 0
-	for delta < totalTargets {
-		adjustedIndex := (idx + delta) % totalTargets
-		target := h.healthcheckers[adjustedIndex]
-		if !slices.Contains(excludedIdx, uint(adjustedIndex)) && target.IsHealthy() {
-			return adjustedIndex
+	start := rand.IntN(n)
+	for delta := 0; delta < n; delta++ {
+		i := (start + delta) % n
+		if contains(excluded, i) {
+			continue
 		}
-		delta++
+		if m.IsRoutable(i) {
+			return i
+		}
 	}
-
-	// no healthy targets, we down:(
-	zap.L().Error("no more healthy targets")
 	return -1
+}
+
+// Taint excludes target i from routing for TaintDuration. No-op when disabled.
+func (m *Manager) Taint(i int, reason string) {
+	if m.opts.TaintDuration <= 0 {
+		return
+	}
+	t := m.targets[i]
+	t.mu.Lock()
+	until := m.now().Add(m.opts.TaintDuration)
+	alreadyTainted := m.now().Before(t.taintedUntil)
+	t.taintedUntil = until
+	t.taintReason = reason
+	t.mu.Unlock()
+	if !alreadyTainted {
+		m.observer.TargetTainted(m.chain, t.cfg.Name, reason, m.opts.TaintDuration)
+	}
+}
+
+// Status returns a snapshot of every target.
+func (m *Manager) Status() []TargetStatus {
+	now := m.now()
+	out := make([]TargetStatus, 0, len(m.targets))
+	for i, t := range m.targets {
+		t.mu.Lock()
+		tainted := now.Before(t.taintedUntil)
+		s := TargetStatus{
+			Name:                t.cfg.Name,
+			Disabled:            t.cfg.Disabled,
+			CheckHealthy:        t.healthy,
+			Lagging:             t.lagging,
+			Tainted:             tainted,
+			BlockNumber:         t.block,
+			Lag:                 t.lag,
+			LastError:           t.lastErr,
+			LastCheck:           t.lastCheck,
+			ConsecutiveFailures: t.failures,
+		}
+		if tainted {
+			s.TaintReason = t.taintReason
+		}
+		t.mu.Unlock()
+		s.Routable = m.IsRoutable(i)
+		out = append(out, s)
+	}
+	return out
+}
+
+func contains(xs []int, x int) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }

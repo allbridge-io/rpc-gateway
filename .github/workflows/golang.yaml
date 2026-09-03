@@ -29,13 +29,8 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           key: cache-${{ hashFiles('**/go.sum') }}
-      - name: Start testing dependencies
-        run: docker-compose up -d
       - name: Run tests
-        run: go test -race -shuffle=on -v ./internal/...
-      - name: Print out docker containers' logs
-        if: always()
-        run: docker-compose logs
+        run: go test -race -shuffle=on -count=1 ./...
 
   vulncheck:
     runs-on: ubuntu-latest

@@ -61,6 +61,9 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 	if cfg.HealthChecks.MaxBlockLag != 20 {
 		t.Errorf("max_block_lag default: got %d", cfg.HealthChecks.MaxBlockLag)
 	}
+	if got := cfg.HealthChecks.TaintDurationOrDefault(); got != DefaultTaintDuration {
+		t.Errorf("taint_duration default: got %v", got)
+	}
 	chain := cfg.Chains["SPL"]
 	if chain.Type != ChainTypeEVM || len(chain.Targets) != 1 || chain.Targets[0].Name != "One" {
 		t.Errorf("chain: %+v", chain)
@@ -85,6 +88,7 @@ timeout = "500ms"
 failure_threshold = 3
 success_threshold = 2
 max_block_lag = 10
+taint_duration = "0s"
 
 [[exceptions]]
 match = "socket hang up"
@@ -121,6 +125,9 @@ disable_keep_alives = true
 	}
 	if cfg.HealthChecks.Timeout != 500*time.Millisecond || cfg.HealthChecks.FailureThreshold != 3 {
 		t.Errorf("healthchecks: %+v", cfg.HealthChecks)
+	}
+	if got := cfg.HealthChecks.TaintDurationOrDefault(); got != 0 {
+		t.Errorf("taint_duration = 0s must disable tainting, got %v", got)
 	}
 	if keys := cfg.ChainKeys(); strings.Join(keys, ",") != "SOL,SPL" {
 		t.Errorf("ChainKeys: %v", keys)

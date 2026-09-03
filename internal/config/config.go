@@ -62,6 +62,24 @@ type HealthChecks struct {
 	// the best target of the same chain by more than this many blocks.
 	// Set max_block_lag = 0 on a chain to disable the check for that chain.
 	MaxBlockLag uint64 `toml:"max_block_lag" default:"20"`
+	// TaintDuration is how long a target is excluded from routing after a request
+	// to it failed at transport/HTTP level (timeout, 5xx, 429, 403) and was retried
+	// elsewhere. Unset = 15s. "0s" disables tainting. Exception matches never taint.
+	TaintDuration *time.Duration `toml:"taint_duration"`
+}
+
+// DefaultTaintDuration applies when healthchecks.taint_duration is not set.
+const DefaultTaintDuration = 15 * time.Second
+
+// TaintDurationOrDefault returns the effective taint duration (0 = disabled).
+func (h HealthChecks) TaintDurationOrDefault() time.Duration {
+	if h.TaintDuration == nil {
+		return DefaultTaintDuration
+	}
+	if *h.TaintDuration < 0 {
+		return 0
+	}
+	return *h.TaintDuration
 }
 
 // Exception describes a text fragment in an RPC response body that must be
