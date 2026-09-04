@@ -30,6 +30,14 @@ var (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "rpc-gateway: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// run keeps every defer (logger flush, signal cleanup) on the exit path.
+func run() error {
 	// A local .env is a convenience for developers; production uses real env vars.
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintf(os.Stderr, "warning: cannot load .env: %v\n", err)
@@ -37,15 +45,15 @@ func main() {
 
 	log, err := newLogger()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "logger: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("logger: %w", err)
 	}
 	defer func() { _ = log.Sync() }()
 	log = log.With(zap.String("version", version), zap.String("commit", commit))
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
-		log.Fatal("configuration error", zap.Error(err))
+		log.Error("configuration error", zap.Error(err))
+		return err
 	}
 	log.Info("configuration loaded",
 		zap.String("path", os.Getenv(config.EnvConfigPath)),
@@ -55,16 +63,19 @@ func main() {
 
 	gw, err := gateway.New(cfg, log, events.NewLogger(log))
 	if err != nil {
-		log.Fatal("cannot build gateway", zap.Error(err))
+		log.Error("cannot build gateway", zap.Error(err))
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if err := gw.ListenAndServe(ctx); err != nil {
-		log.Fatal("gateway stopped with error", zap.Error(err))
+		log.Error("gateway stopped with error", zap.Error(err))
+		return err
 	}
 	log.Info("gateway stopped")
+	return nil
 }
 
 func newLogger() (*zap.Logger, error) {

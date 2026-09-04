@@ -4,7 +4,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS ?= -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
-.PHONY: build build-render run test test-race test-testnet test-testnet-compile vet tidy
+.PHONY: build build-render run test test-race test-testnet test-testnet-compile vet lint tidy
 
 ## Build the binary into ./rpc-gateway
 build:
@@ -38,6 +38,10 @@ test-testnet-compile:
 vet:
 	go vet ./...
 	go vet -tags testnet ./tests/testnet/...
+
+## golangci-lint v2 (brew install golangci-lint); same config as CI
+lint:
+	golangci-lint run ./...
 
 tidy:
 	go mod tidy

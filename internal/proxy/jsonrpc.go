@@ -56,7 +56,7 @@ func postJSON(ctx context.Context, client *http.Client, url string, headers map[
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRPCResponseBytes))
 	if err != nil {

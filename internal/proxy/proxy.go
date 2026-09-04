@@ -85,9 +85,10 @@ func New(opts Options, manager *Manager) (*Proxy, error) {
 		if err != nil {
 			return nil, err
 		}
-		httpProxy.ModifyResponse = p.modifyResponse(t)
+		// The body is owned by ReverseProxy, which copies it to the client and closes it.
+		httpProxy.ModifyResponse = p.modifyResponse(t) //nolint:bodyclose
 		httpProxy.ErrorHandler = errorHandler
-		wsProxy.ModifyResponse = p.modifyResponse(t)
+		wsProxy.ModifyResponse = p.modifyResponse(t) //nolint:bodyclose
 		wsProxy.ErrorHandler = errorHandler
 		p.targets = append(p.targets, &upstream{cfg: t, httpProxy: httpProxy, wsProxy: wsProxy})
 	}
@@ -267,7 +268,7 @@ func peekBody(resp *http.Response, t config.Target) (string, error) {
 		return "", nil
 	}
 	raw, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil {
 		return "", err
 	}

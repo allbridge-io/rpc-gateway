@@ -6,9 +6,8 @@ import (
 	"os"
 	"regexp"
 	"sort"
-	"strings"
-
 	"strconv"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/creasty/defaults"

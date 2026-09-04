@@ -1,0 +1,38 @@
+# Render Blueprint for the RPC gateway: one web service serves every chain.
+#
+# Not applied automatically. Use it as the reference when creating the service
+# in the Render dashboard (or "New > Blueprint Instance"), then:
+#   1. Add the secret file  config.toml  with the TOML config (mounted at /etc/secrets/config.toml).
+#      Secret files cannot be declared in a Blueprint; the allbridge-next-configs repo uploads
+#      them with its "Upload Render Secret Files" workflow (# GROUP / # FILE header in the file).
+#   2. Add env vars referenced from the TOML as ${NAME} (API keys), if any.
+#   3. Deploy. The service reports ready once /healthz answers; /status shows every target.
+#
+# Go version: Render's native Go runtime honours the `go` directive in go.mod
+# (Go downloads the matching toolchain during the build), same as allbridge-next-info-server.
+
+services:
+  - type: web
+    name: rpc-gateway
+    runtime: go
+    repo: https://github.com/allbridge-io/rpc-gateway
+    branch: main
+    plan: starter
+    region: frankfurt
+    buildCommand: make build-render
+    startCommand: ./app
+    healthCheckPath: /healthz
+    autoDeploy: false
+    envVars:
+      - key: CONFIG_TOML_PATH
+        value: /etc/secrets/config.toml
+      # Optional second file merged on top of the first one:
+      # - key: SECRET_CONFIG_TOML_PATH
+      #   value: /etc/secrets/secrets.toml
+      - key: LOG_FORMAT
+        value: json
+      - key: LOG_LEVEL
+        value: info
+      # API keys referenced from the TOML as ${ALCHEMY_KEY} etc. are set in the dashboard:
+      # - key: ALCHEMY_KEY
+      #   sync: false

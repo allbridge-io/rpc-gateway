@@ -1,171 +1,249 @@
-RPC Gateway
-===
+# RPC Gateway
 
-RPC Gateway acts as a failover proxy routing ETH RPC requests across configured RPC nodes. For every ETH RPC node(group) configured the RPC Gateway tracks its latency, current height and error rates. These are then used to determine whether or not to failover.
+A failover proxy in front of blockchain RPC providers. One instance serves
+every configured chain from one port: each chain lives under its own URL
+prefix and has its own list of upstream targets, health checks and failover.
 
-From a high level it simply looks like this:
 ```mermaid
-sequenceDiagram
-Alice->>RPC Gateway: eth_call
-loop Healthcheck
-    RPC Gateway->>Alchemy: Check health
-    RPC Gateway->>Infura: Check health
-end
-Note right of RPC Gateway: Routes only to healthy targets
-loop Configurable Retries
-RPC Gateway->>Alchemy: eth_call?
-Alchemy-->>RPC Gateway: ERROR
-end
-Note right of RPC Gateway: RPC Call is rerouted after failing retries
-RPC Gateway->>Infura: eth_call?
-Infura-->>RPC Gateway: {"result":[...]}
-RPC Gateway-->>Alice: {"result":[...]}
+flowchart LR
+    C[Client] -->|POST /SPL| G[RPC Gateway]
+    C -->|POST /SOL, WS /SOL| G
+    C -->|ANY /TRX/wallet/...| G
+    G -->|healthy?| A1[Alchemy]
+    G -->|healthy?| A2[PublicNode]
+    G -->|healthy?| S1[Helius]
+    G -->|healthy?| T1[TronGrid]
+    subgraph SPL
+      A1
+      A2
+    end
+    subgraph SOL
+      S1
+    end
+    subgraph TRX
+      T1
+    end
 ```
 
-The gateway assesses the health of the underlying RPC provider by:
-- continuously (configurable how often) checking the blockNumber, if the request fails or timeouts it marks it as unhealthy (configurable thresholds)
-- every request that fails will be rerouted to the next available healthy target after a configurable amount of retries
-  - if it will be rerouted the current target will be "tainted"
+A request goes to a random routable target of its chain. If the target fails
+(connection error, timeout, HTTP 5xx / 429 / 401 / 403, or a response body
+matching a configured *exception*) the same request is retried on another
+target; the client only sees the final answer. The response header
+`X-Rpc-Provider` names the target that answered.
 
-## Developing
+## Routes
 
-Start dependent services
-```zsh
-docker-compose up
+| Route | Purpose |
+|---|---|
+| `POST /{chain}` | JSON-RPC request for the chain (key is case-insensitive, e.g. `/SPL`, `/sol`) |
+| `GET /{chain}` + `Upgrade: websocket` | WebSocket, proxied to the target's `ws_url` (Solana subscriptions) |
+| `ANY /{chain}/{path}` | Tron only: the path and query are forwarded to the target (`/TRX/wallet/getnowblock`, `/TRX/v1/...`, `/TRX/jsonrpc`) |
+| `GET /status` | JSON snapshot of every chain and target: routable, block number, lag, taint, last error |
+| `GET /healthz` | Liveness for Render: `{"healthy":true}` whenever the process is up (never depends on upstreams) |
+
+Unknown chains and routes return a JSON-RPC style error with HTTP 404. When no
+target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error.
+
+## Chain types
+
+| `type` | Health check | Client path | Notes |
+|---|---|---|---|
+| `evm` | `eth_blockNumber` | ignored; the target URL is used as-is (API keys often live there) | Ethereum, Arbitrum, BSC, ... |
+| `solana` | `getSlot` | ignored | WebSocket goes to `ws_url` (defaults to `http_url` with ws scheme) |
+| `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
+
+## How health works
+
+Every `interval` all targets of a chain are checked concurrently:
+
+- `failure_threshold` consecutive failed checks (error, timeout, non-200,
+  malformed answer) mark a target unhealthy; `success_threshold` consecutive
+  successes bring it back.
+- A target whose block number is more than `max_block_lag` behind the best
+  target of the same chain is excluded until it catches up. This guards
+  against providers that serve cached or stale data while "answering fine".
+- A request that fails at transport/HTTP level (timeout, 5xx, 429, 401/403,
+  dropped connection) is retried elsewhere **and** the target is *tainted*
+  for `taint_duration` (default 15s) so the next requests skip it.
+  Exception matches only retry the request: they describe a bad answer to
+  one request, not a bad node.
+- Client-side errors (HTTP 4xx other than the above, JSON-RPC errors that
+  match no exception, Tron `{"Error": ...}` bodies) are passed through
+  untouched.
+
+Everything above is observable on `GET /status` and in the structured log
+(`target unhealthy`, `target healthy`, `target tainted`, `request rerouted`,
+`no healthy targets`).
+
+## Configuration
+
+One TOML file, see [config.example.toml](config.example.toml) for a complete,
+commented example with public testnets.
+
+```toml
+[server]
+port = 3000                 # PORT env overrides (Render sets it)
+upstream_timeout = "5s"     # wait for a target to start answering before failover
+
+[healthchecks]
+interval = "5s"
+timeout = "3s"
+failure_threshold = 2
+success_threshold = 1
+max_block_lag = 20          # per-chain override: chains.X.max_block_lag (0 disables)
+taint_duration = "15s"      # "0s" disables tainting
+
+[[exceptions]]              # global; chains may add their own [[chains.X.exceptions]]
+match = "socket hang up"
+message = "optional text used in logs"
+
+[chains.SPL]
+type = "evm"
+chain_id = "0xaa36a7"       # optional; testnet checks verify eth_chainId
+[[chains.SPL.targets]]
+name = "PublicNode"
+http_url = "https://ethereum-sepolia-rpc.publicnode.com"
+[[chains.SPL.targets]]
+name = "Alchemy"
+http_url = "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+disabled = true             # kept in the file, never routed to
+# compression = true        # target accepts gzip request bodies as-is
+# disable_keep_alives = true
+# headers = { "X-Api-Key" = "${KEY}" }   # added to every request and health check
+
+[chains.SOL]
+type = "solana"
+[[chains.SOL.targets]]
+name = "Public"
+http_url = "https://api.devnet.solana.com"
+ws_url = "wss://api.devnet.solana.com"
+
+[chains.TRX]
+type = "tron"
+[[chains.TRX.targets]]
+name = "TronGrid"
+http_url = "https://api.shasta.trongrid.io"                  # base URL
+headers = { "TRON-PRO-API-KEY" = "${TRONGRID_KEY}" }
 ```
 
-Make sure the test pass
-```zsh
-go test
+Rules the loader enforces at startup (a violation is a fatal error with a
+readable message): at least one chain and one target per chain, chain keys
+made of `[A-Za-z0-9_-]` and unique ignoring case, target names unique per
+chain, `http_url` with `http(s)://`, `ws_url` with `ws(s)://`, positive
+durations, thresholds ≥ 1, no unknown keys (a typo such as `prot` fails
+instead of silently falling back to a default). Explicit zero values are
+replaced by defaults (`failure_threshold = 0` becomes 2); disable block lag
+per chain with `max_block_lag = 0`, tainting with `taint_duration = "0s"`.
+
+### Sources and precedence
+
+Later sources win key by key:
+
+1. `CONFIG_TOML_PATH` (required)
+2. `SECRET_CONFIG_TOML_PATH` (optional second file, e.g. one with API keys)
+3. `CONFIG_OVERRIDE_TOML` (optional inline TOML, handy for one-off overrides)
+4. `PORT` (overrides `server.port`)
+
+Any string value may reference an environment variable as `${NAME}`; an
+unset name aborts startup listing what is missing. `CONFIG_TOML_SECTION`
+takes only one top-level table of the files (for a TOML shared with other
+services, e.g. `[rpc_gateway.*]`). Arrays of tables are replaced as a whole
+when merged: a secret file can swap a chain's `targets`, not patch one entry.
+
+### Environment variables
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CONFIG_TOML_PATH` | required | base TOML file |
+| `SECRET_CONFIG_TOML_PATH` | | merged on top of the base file |
+| `CONFIG_OVERRIDE_TOML` | | inline TOML merged last |
+| `CONFIG_TOML_SECTION` | | use only this top-level table |
+| `PORT` | `server.port` | listening port |
+| `LOG_LEVEL` | `info` | `debug` also logs every request and upstream attempt |
+| `LOG_FORMAT` | `json` | `console` for local reading |
+
+A local `.env` file is loaded if present (see [.env.example](.env.example)).
+
+## Running locally
+
+```bash
+cp config.example.toml config.local.toml
+cp .env.example .env            # CONFIG_TOML_PATH=./config.local.toml, LOG_FORMAT=console
+echo 'ALCHEMY_KEY=x' >> .env    # any ${NAME} used in the config
+make run
 ```
 
-To run the app locally
-```zsh
-go run . --config ./example_config.yml
+```bash
+curl -s localhost:3000/status | python3 -m json.tool
+curl -s localhost:3000/SPL -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
+curl -s -X POST localhost:3000/TRX/wallet/getnowblock
 ```
 
-## Running & Configuration
+To watch a failover, add a dead target to a chain (`http_url = "http://127.0.0.1:9"`)
+and run with `LOG_LEVEL=debug`; roughly every second request will show
+`request rerouted` and `target tainted` while still answering from a live target.
 
-Build the binary:
-```
-go build
-```
+## Tests
 
-The statically linked `rpc-gateway` binary has one flag `--config` that defaults to `./config.yml` simply run it by:
-```
-./rpc-gateway --config ~/.rpc-gateway/config.yml
-```
-
-
-### Configuration
-
-```yaml
-metrics:
-  port: "9090" # port for prometheus metrics, served on /metrics and /
-
-proxy:
-  port: "3000" # port for RPC gateway
-  upstreamTimeout: "1s" # when is a request considered timed out
-
-healthChecks:
-  interval: "5s" # how often to do healthchecks
-  timeout: "1s" # when should the timeout occur and considered unhealthy
-  failureThreshold: 2 # how many failed checks until marked as unhealthy
-  successThreshold: 1 # how many successes to be marked as healthy again
-
-targets: # the order here determines the failover order
-  - name: "Cloudflare"
-    connection:
-      http: # ws is supported by default, it will be a sticky connection.
-        url: "https://cloudflare-eth.com"
-  - name: "Alchemy"
-    connection:
-      http: # ws is supported by default, it will be a sticky connection.
-        url: "https://alchemy.com/rpc/<apikey>"
+```bash
+make test           # unit + integration tests, offline, ~5s
+make test-race      # same with the race detector (CI)
+make test-testnet   # real calls through the gateway against public testnets, ~15s
 ```
 
-## Websockets
+The offline suite uses a programmable fake RPC node
+([internal/testutil/fakenode](internal/testutil/fakenode)) to simulate every
+failure a provider can produce: HTTP 5xx/429/403, dropped connections,
+hanging or slow responses, invalid JSON, JSON-RPC errors, lagging blocks,
+gzip bodies, Tron-style error bodies. Health rounds are driven synchronously
+(`Manager.RunOnce`) so tests never sleep.
 
-Websockets are sticky and are handled transparently.
+The testnet suite ([tests/testnet](tests/testnet)) starts the real gateway on
+Sepolia, Arbitrum Sepolia, Solana devnet and Tron Shasta, injects a dead
+target into every chain, and verifies per chain type that real calls work
+(including a Solana WebSocket subscription and the Tron `/wallet`, `/v1`
+and `/jsonrpc` APIs), that the dead target is detected and never used, and,
+in a second run, that a request landing on it is rerouted and the target
+tainted. Point it at your own providers with
+`TESTNET_CONFIG_TOML_PATH=... [SECRET_CONFIG_TOML_PATH=...] make test-testnet`;
+`TESTNET_CHAINS=SOL,TRX` filters chains.
 
-## Taints
+## Deploying on Render
 
-Taints are a way for the `HealthcheckManager` to mark a node as unhealthy even though it responds to RPC calls. Some reasons for that are:
-- BlockNumber is way behind a "quorum".
-- A number of proxied requests fail in a given time.
+[render.yaml](render.yaml) describes the single web service: Go native
+runtime, `make build-render`, `./app`, health check on `/healthz`. The TOML
+config is a Render **secret file** mounted at `/etc/secrets/config.toml`
+(`CONFIG_TOML_PATH` points there); API keys referenced as `${NAME}` are plain
+environment variables. Logs are JSON on stdout; Render keeps them 7 days on
+Hobby and 14 on Pro. Shipping them (and a few metrics) to Grafana Cloud over
+OTLP is the next step: the gateway emits every notable event through an
+`events.Observer`, so the exporter plugs in next to the logger.
 
-Currently taint clearing is not implemented yet.
+## Observability
 
-## Build Docker images locally
-We should build multi-arch image so the image can be run in both `arm64` and `amd64` arch.
+The core never logs on its own; it reports events to an `events.Observer`
+([internal/events](internal/events)): target health changes with the reason,
+taints, reroutes, chains with no healthy target, and every upstream attempt
+with method, status and duration (debug level). `events.Logger` writes them
+with zap, `events.Multi` fans them out to several sinks, `events.Recorder`
+is used by tests. There is no Prometheus endpoint by design: nothing on
+Render scrapes it, and Grafana Cloud accepts pushed OTLP data instead.
 
-```zsh
-TAG="$(git rev-parse HEAD)"
-docker buildx build --platform linux/amd64,linux/arm64 -t 883408475785.dkr.ecr.us-east-1.amazonaws.com/rpc-gateway:${TAG} --push .
+## Layout
+
+```
+cmd/rpcgateway        main: env, logger, config, gateway lifecycle
+internal/config       TOML schema, loading, merging, ${ENV} expansion, validation
+internal/gateway      router (/{chain}, /status, /healthz), server lifecycle
+internal/proxy        per-chain failover proxy, health manager, JSON-RPC helpers
+internal/events       Observer interface, Logger, Multi, Recorder
+internal/testutil     fakenode: programmable fake RPC node for tests
+tests/testnet         real-network checks (build tag `testnet`)
 ```
 
-## Runtime configuration
+## Docker
 
-Targets can be enabled or disabled at runtime using the Admin API.
-
-### Configuration
-
-```yaml
-admin:
-  admins: # a list of addresses allowed to access Admin API
-    - 0x6Dcbf665293BDDe2237c1A6Af41fd70E969883F0
-  basePath: "" # path prefix where to serve the API. Optional
-  maxTokenLifespan: 3600 # authorization token lifespan in seconds. Optional
-  port: 7926 # port for the API, served on /admin. Optional
-```
-
-### Authentication request
-
-POST '/admin/auth/token'
-
-Request body params:
-
-- **address**: Ethereum address of the user
-
-Response body:
-
-- **payload**: Base64url encoded challenge
-
-The endpoint serves to issue a challenge, which must be signed to demonstrate the user's control over the specified
-Ethereum address. Forming an authentication token involves concatenating the challenge, encoded with base64url, with a
-period ('.'), and appending it with the signature, also encoded with base64url. Formed authentication token must be sent
-as a bearer token in the `Authorization` header to access the API.
-
-### List available targets request
-
-GET '/admin/targets'
-
-Request headers:
-
-- **Authorization**: Header format is `Bearer token` where `token` is the token formed after the authentication request.
-
-Response body:
-
-The response body consists of an array of available RPC nodes. Each element includes the following attributes:
-
-- **name**: the name of the target.
-- **blockNumber**: last block number known to the RPC node.
-- **disabled**: is RPC node disabled.
-
-### Change target status request
-
-POST '/admin/targets/:name'
-
-Request path params:
-
-- **name**: target name
-
-Request headers:
-
-- **Authorization**: Header format is `Bearer token` where `token` is the token formed after the authentication request.
-
-Request body:
-
-- **disabled**: new status
-
-Updates specified target's status. Requests are not redirected by the RPC gateway to the disabled target.
+`Dockerfile` builds the same binary for anyone not using Render's native
+runtime: `docker build -t rpc-gateway .` then run with `-e CONFIG_TOML_PATH=/config/config.toml`
+and the file mounted.

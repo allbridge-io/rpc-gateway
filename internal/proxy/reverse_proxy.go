@@ -52,42 +52,28 @@ func newReverseProxies(t config.Target, typ config.ChainType, upstreamTimeout ti
 	}
 
 	passThrough := typ.PassThroughPath()
-	httpProxy = &httputil.ReverseProxy{Director: director(httpTarget, passThrough, t.Headers), Transport: transport}
-	wsProxy = &httputil.ReverseProxy{Director: director(wsTarget, passThrough, t.Headers), Transport: transport}
+	httpProxy = &httputil.ReverseProxy{Rewrite: rewrite(httpTarget, passThrough, t.Headers), Transport: transport}
+	wsProxy = &httputil.ReverseProxy{Rewrite: rewrite(wsTarget, passThrough, t.Headers), Transport: transport}
 	return httpProxy, wsProxy, nil
 }
 
-func director(target *url.URL, passThrough bool, headers map[string]string) func(*http.Request) {
-	return func(r *http.Request) {
-		r.URL.Scheme = target.Scheme
-		r.URL.Host = target.Host
-		r.Host = target.Host
+func rewrite(target *url.URL, passThrough bool, headers map[string]string) func(*httputil.ProxyRequest) {
+	return func(pr *httputil.ProxyRequest) {
 		if passThrough {
-			// r.URL.Path is the sub-path after /{chain}, prepared by the router.
-			r.URL.Path = JoinURLPath(target.Path, r.URL.Path)
-			r.URL.RawPath = ""
-			r.URL.RawQuery = mergeQuery(target.RawQuery, r.URL.RawQuery)
+			// pr.In.URL.Path is the sub-path after /{chain}, prepared by the router.
+			// SetURL joins it to the target's base path, merges both query strings
+			// and lets the transport derive the Host header from the target.
+			pr.SetURL(target)
 		} else {
-			r.URL.Path = target.Path
-			r.URL.RawPath = target.RawPath
-			r.URL.RawQuery = target.RawQuery
+			u := *target
+			pr.Out.URL = &u
+			pr.Out.Host = target.Host
 		}
 		for k, v := range headers {
-			r.Header.Set(k, v)
+			pr.Out.Header.Set(k, v)
 		}
-		if _, ok := r.Header["User-Agent"]; !ok {
-			r.Header.Set("User-Agent", "") // do not let net/http add its default UA
+		if _, ok := pr.Out.Header["User-Agent"]; !ok {
+			pr.Out.Header.Set("User-Agent", "") // do not let net/http add its default UA
 		}
-	}
-}
-
-func mergeQuery(targetQuery, clientQuery string) string {
-	switch {
-	case targetQuery == "":
-		return clientQuery
-	case clientQuery == "":
-		return targetQuery
-	default:
-		return targetQuery + "&" + clientQuery
 	}
 }

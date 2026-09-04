@@ -1,86 +1,51 @@
+version: "2"
+
 run:
   timeout: 5m
+  build-tags:
+    - testnet
 
 linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:
     - bodyclose
-    - depguard
-    - dogsled
-    - dupl
-    - errcheck
     - errorlint
-    - exportloopref
-    - funlen
-    - gochecknoinits
-    - gocognit
-    - goconst
     - gocritic
-    - gocyclo
-    - godot
-    - gofmt
-    - goimports
-    - gomoddirectives
-    - goprintffuncname
     - gosec
-    - gosimple
-    - govet
-    - ineffassign
     - misspell
-    - nakedret
-    - nestif
     - prealloc
     - revive
-    - rowserrcheck
-    - staticcheck
-    - stylecheck
-    - tparallel
-    - typecheck
     - unconvert
     - unparam
-    - unused
-    - whitespace
-    - gochecknoglobals
-
-linters-settings:
-  funlen:
-    lines: 100
-  depguard:
+  settings:
+    gosec:
+      excludes:
+        - G404 # math/rand is fine for picking a target
+    revive:
+      rules:
+        - name: exported
+          disabled: true # doc comments are enforced by review, not by the linter
+  exclusions:
     rules:
-      main:
-        allow:
-          - "$gostd"
-          - github.com/0xProject/rpc-gateway
-          - github.com/Shopify/toxiproxy
-          - github.com/ethereum/go-ethereum
-          - github.com/gorilla/mux
-          - github.com/mwitkow/go-conntrack
-          - github.com/pkg/errors
-          - github.com/prometheus/client_golang
-          - github.com/stretchr/testify
-          - github.com/slok/go-http-metrics
-          - github.com/purini-to/zapmw
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - errcheck
+          - gosec
+          - unparam
+          - revive
+      - path: internal/testutil/
+        linters:
+          - gosec
+          - errcheck
 
-issues:
-  max-same-issues: 0 # unlimited
-  max-issues-per-linter: 0 # unlimited
-  exclude-rules:
-    - path: test_utils.go
-      linters:
-        - dupl              # many functions in tests look like duplicates
-        - funlen            # test function can be very long due to test cases
-        - gochecknoglobals  # globals in tests are fine
-        - gocognit          # test functions can be long/complex
-        - gomnd             # there are many magic numbers in tests
-        - revive            # naming ain't eazy
-        - errcheck
-        - ineffassign
-    - path: _test.go
-      linters:
-        - dupl              # many functions in tests look like duplicates
-        - funlen            # test function can be very long due to test cases
-        - gochecknoglobals  # globals in tests are fine
-        - gocognit          # test functions can be long/complex
-        - gomnd             # there are many magic numbers in tests
-        - revive            # naming ain't eazy
-        - errcheck
-        - ineffassign
+formatters:
+  enable:
+    - gofmt
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule

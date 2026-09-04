@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -115,7 +116,7 @@ func (g *Gateway) recover(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				if rec == http.ErrAbortHandler {
+				if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 					panic(rec) // the standard way to abort a hijacked/streamed response
 				}
 				g.log.Error("panic in handler", zap.Any("panic", rec), zap.ByteString("stack", debug.Stack()))
