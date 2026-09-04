@@ -438,3 +438,99 @@ func absDiff(a, b uint64) uint64 {
 	}
 	return b - a
 }
+
+// TestTestnetReroute proves failover on the real network: the dead target is
+// kept "healthy" by a huge failure threshold, so requests do land on it and
+// must be rerouted to a live provider, after which the taint keeps it out.
+func TestTestnetReroute(t *testing.T) {
+	cfg := loadConfig(t)
+	cfg.HealthChecks.FailureThreshold = 1000 // never mark the dead target unhealthy by checks
+	taint := 30 * time.Second
+	cfg.HealthChecks.TaintDuration = &taint
+
+	logger, _ := zap.NewDevelopment()
+	rec := &events.Recorder{}
+	gw, err := gateway.New(cfg, logger, multiObserver{rec, events.NewLogger(logger)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- gw.ListenAndServe(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	addrCtx, addrCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer addrCancel()
+	addr, err := gw.Addr(addrCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &env{cfg: cfg, gw: gw, base: "http://" + addr, rec: rec, http: &http.Client{Timeout: requestTimeout}}
+
+	for _, key := range cfg.ChainKeys() {
+		key := key
+		chain := cfg.Chains[key]
+		t.Run(key, func(t *testing.T) {
+			path := "/" + key
+			call := func() *http.Response {
+				switch chain.Type {
+				case config.ChainTypeTron:
+					resp, data := e.do(t, http.MethodPost, path+"/wallet/getnowblock", []byte("{}"))
+					if resp.StatusCode != http.StatusOK {
+						t.Fatalf("HTTP %d %s", resp.StatusCode, truncate(data))
+					}
+					return resp
+				case config.ChainTypeSolana:
+					_, resp := e.rpc(t, path, "getSlot")
+					return resp
+				default:
+					_, resp := e.rpc(t, path, "eth_blockNumber")
+					return resp
+				}
+			}
+
+			reroutesOfChain := func() []events.Event {
+				var out []events.Event
+				for _, ev := range rec.Of(events.KindRerouted, deadTargetName) {
+					if ev.Chain == key {
+						out = append(out, ev)
+					}
+				}
+				return out
+			}
+
+			// With two targets picked at random, 30 tries are all but guaranteed to hit the dead one.
+			var mine []events.Event
+			for i := 0; i < 30 && len(mine) == 0; i++ {
+				if provider := call().Header.Get("X-Rpc-Provider"); provider == deadTargetName {
+					t.Fatalf("response claims to come from the dead target")
+				}
+				mine = reroutesOfChain()
+			}
+			if len(mine) == 0 {
+				t.Fatal("the dead target was never picked; cannot observe the reroute")
+			}
+			t.Logf("%s: request hit %s and was rerouted: %s", key, deadTargetName, mine[0].Reason)
+			if !strings.Contains(mine[0].Reason, "connection refused") {
+				t.Errorf("unexpected reroute reason: %s", mine[0].Reason)
+			}
+
+			// The failed attempt tainted the dead target: the next requests must skip it.
+			var tainted bool
+			for _, s := range gw.Chain(key).Manager.Status() {
+				if s.Name == deadTargetName {
+					tainted = s.Tainted
+				}
+			}
+			if !tainted {
+				t.Fatalf("dead target must be tainted after the failed request")
+			}
+			before := len(reroutesOfChain())
+			for i := 0; i < 10; i++ {
+				call()
+			}
+			if after := len(reroutesOfChain()); after != before {
+				t.Errorf("tainted target still received requests: %d new reroutes", after-before)
+			}
+		})
+	}
+}
