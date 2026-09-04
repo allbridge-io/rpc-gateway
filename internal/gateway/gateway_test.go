@@ -27,6 +27,7 @@ type fixture struct {
 	spl1 *fakenode.Node
 	spl2 *fakenode.Node
 	sol  *fakenode.Node
+	trx  *fakenode.Node
 }
 
 // newFixture loads a real TOML config (the same path production uses) with
@@ -36,9 +37,11 @@ func newFixture(t *testing.T, extraTOML string) *fixture {
 	spl1 := fakenode.New(t, "Spl1", config.ChainTypeEVM)
 	spl2 := fakenode.New(t, "Spl2", config.ChainTypeEVM)
 	sol := fakenode.New(t, "Sol", config.ChainTypeSolana)
+	trx := fakenode.New(t, "Trx", config.ChainTypeTron)
 	spl1.Set(fakenode.Behavior{Block: 100})
 	spl2.Set(fakenode.Behavior{Block: 100})
 	sol.Set(fakenode.Behavior{Block: 5000})
+	trx.Set(fakenode.Behavior{Block: 777})
 
 	toml := fmt.Sprintf(`
 [server]
@@ -66,7 +69,13 @@ max_block_lag = 0
 [[chains.SOL.targets]]
 name = "Sol"
 http_url = "%s"
-`, extraTOML, spl1.URL(), spl2.URL(), sol.URL())
+[chains.TRX]
+type = "tron"
+[[chains.TRX.targets]]
+name = "Trx"
+http_url = "%s"
+headers = { "TRON-PRO-API-KEY" = "test-key" }
+`, extraTOML, spl1.URL(), spl2.URL(), sol.URL(), trx.URL())
 	path := filepath.Join(t.TempDir(), "config.toml")
 	if err := os.WriteFile(path, []byte(toml), 0o600); err != nil {
 		t.Fatal(err)
@@ -82,7 +91,7 @@ http_url = "%s"
 	}
 	srv := httptest.NewServer(gw.Handler())
 	t.Cleanup(srv.Close)
-	return &fixture{gw: gw, srv: srv, rec: rec, spl1: spl1, spl2: spl2, sol: sol}
+	return &fixture{gw: gw, srv: srv, rec: rec, spl1: spl1, spl2: spl2, sol: sol, trx: trx}
 }
 
 func (f *fixture) do(t *testing.T, method, path, body string, headers ...string) (*http.Response, string) {
@@ -157,8 +166,43 @@ func TestGateway_UnknownRoutes404(t *testing.T) {
 		}
 	}
 	_, body := f.do(t, http.MethodPost, "/BTC", rpcBody)
-	if !strings.Contains(body, "SOL, SPL") {
+	if !strings.Contains(body, "SOL, SPL, TRX") {
 		t.Errorf("unknown chain error should list configured chains: %s", body)
+	}
+}
+
+func TestGateway_TronPassThroughRoutes(t *testing.T) {
+	f := newFixture(t, "")
+
+	resp, body := f.do(t, http.MethodPost, "/TRX/wallet/getnowblock", "{}")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"number":777`) {
+		t.Errorf("POST /TRX/wallet/getnowblock: %d %s", resp.StatusCode, body)
+	}
+	resp, body = f.do(t, http.MethodGet, "/trx/v1/accounts/TAbc/transactions?limit=2", "")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"path":"/v1/accounts/TAbc/transactions"`) || !strings.Contains(body, `"query":"limit=2"`) {
+		t.Errorf("GET with sub-path and query: %d %s", resp.StatusCode, body)
+	}
+	resp, body = f.do(t, http.MethodPost, "/TRX/jsonrpc", `{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}`)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"result":"0x1"`) {
+		t.Errorf("POST /TRX/jsonrpc: %d %s", resp.StatusCode, body)
+	}
+	resp, body = f.do(t, http.MethodPost, "/TRX", "{}")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"path":"/"`) {
+		t.Errorf("bare /TRX must reach the target root: %d %s", resp.StatusCode, body)
+	}
+	resp, _ = f.do(t, http.MethodOptions, "/TRX/wallet/getnowblock", "")
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("OPTIONS: %d", resp.StatusCode)
+	}
+	for _, c := range f.trx.Calls() {
+		if c.Header.Get("TRON-PRO-API-KEY") != "test-key" {
+			t.Errorf("api key header missing on %s", c.Path)
+		}
+	}
+	// Single-endpoint chains still refuse sub-paths.
+	resp, _ = f.do(t, http.MethodPost, "/SPL/wallet/getnowblock", "{}")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("sub-path on an evm chain must be 404, got %d", resp.StatusCode)
 	}
 }
 

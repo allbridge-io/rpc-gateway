@@ -9,6 +9,7 @@
 #
 # Each chain is served on its own path prefix: POST http://host:port/<CHAIN_KEY>
 # WebSocket clients connect to ws://host:port/<CHAIN_KEY> (Solana).
+# Tron (type = "tron") passes the sub-path through: http://host:port/TRX/wallet/getnowblock
 
 [server]
 port = 3000                 # overridden by PORT env (Render sets it)
@@ -51,12 +52,18 @@ chain_id = "0x66eee"
 name = "Arbitrum"
 http_url = "https://sepolia-rollup.arbitrum.io/rpc"
 
-[chains.TRX]                # Tron Shasta (JSON-RPC compatible endpoint)
-type = "evm"
-max_block_lag = 5
+# ============================== Tron ==============================
+[chains.TRX]                # Tron Shasta: full HTTP API (/wallet/*, /walletsolidity/*, /v1/*, /jsonrpc)
+type = "tron"
+max_block_lag = 5           # Tron blocks every 3s
+[[chains.TRX.exceptions]]   # node-side failures reported with HTTP 200; client errors are passed through
+match = "SERVER_BUSY"
+[[chains.TRX.exceptions]]
+match = "BLOCK_UNSOLIDIFIED"
 [[chains.TRX.targets]]
 name = "TronGrid"
-http_url = "https://api.shasta.trongrid.io/jsonrpc"
+http_url = "https://api.shasta.trongrid.io"   # base URL, the client's path is appended
+# headers = { "TRON-PRO-API-KEY" = "${TRONGRID_KEY}" }  # TronGrid rate limits without a key
 
 # ============================== Solana ==============================
 [chains.SOL]                # Solana devnet

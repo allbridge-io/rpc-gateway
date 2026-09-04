@@ -23,7 +23,16 @@ type ChainType string
 const (
 	ChainTypeEVM    ChainType = "evm"
 	ChainTypeSolana ChainType = "solana"
+	// ChainTypeTron proxies the Tron HTTP API (/wallet/*, /walletsolidity/*,
+	// /v1/*, /jsonrpc): the client's path and query are appended to the target URL.
+	ChainTypeTron ChainType = "tron"
 )
+
+// PassThroughPath tells whether the client's sub-path after /{chain} is
+// forwarded to the target (Tron) or ignored (single JSON-RPC endpoint).
+func (t ChainType) PassThroughPath() bool {
+	return t == ChainTypeTron
+}
 
 // Config is the root of the TOML document.
 type Config struct {
@@ -91,7 +100,7 @@ type Exception struct {
 
 // Chain is one blockchain network served by the gateway.
 type Chain struct {
-	Type ChainType `toml:"type" validate:"required,oneof=evm solana"`
+	Type ChainType `toml:"type" validate:"required,oneof=evm solana tron"`
 	// ChainID is the value eth_chainId is expected to return (EVM only, hex like "0xaa36a7").
 	// Optional; used by testnet checks and startup sanity checks.
 	ChainID string `toml:"chain_id" validate:"omitempty,hexadecimal_prefixed"`
@@ -107,6 +116,9 @@ type Target struct {
 	HTTPURL string `toml:"http_url" validate:"required,http_url"`
 	// WSURL is the WebSocket endpoint (Solana). When empty, HTTPURL is used with ws(s) scheme.
 	WSURL string `toml:"ws_url" validate:"omitempty,ws_url"`
+	// Headers are added to every request sent to the target (for example an API
+	// key header such as TRON-PRO-API-KEY). They override client headers of the same name.
+	Headers map[string]string `toml:"headers" validate:"omitempty,dive,keys,min=1,endkeys,required"`
 	// Compression tells that the target accepts gzip-compressed request bodies as-is.
 	Compression       bool `toml:"compression"`
 	DisableKeepAlives bool `toml:"disable_keep_alives"`

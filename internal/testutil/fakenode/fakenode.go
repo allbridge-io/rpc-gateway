@@ -6,6 +6,7 @@ package fakenode
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,13 +41,20 @@ type Behavior struct {
 	Hang bool
 	// GzipResponse compresses the response body (Content-Encoding: gzip).
 	GzipResponse bool
+	// TronError makes a Tron node answer 200 with {"Error": "..."} (how Tron reports most failures).
+	TronError string
+	// TronResultCode makes a Tron node answer 200 with {"result": {"code": "...", "message": "<hex>"}}.
+	TronResultCode string
 }
 
 // Call is one recorded request.
 type Call struct {
-	Method string
-	Body   string
-	Header http.Header
+	Method     string // JSON-RPC method, "" for non JSON-RPC bodies
+	HTTPMethod string
+	Path       string
+	Query      string
+	Body       string
+	Header     http.Header
 }
 
 // Node is a fake RPC node bound to a local test server.
@@ -132,7 +140,10 @@ func (n *Node) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	n.mu.Lock()
-	n.log = append(n.log, Call{Method: req.Method, Body: string(raw), Header: r.Header.Clone()})
+	n.log = append(n.log, Call{
+		Method: req.Method, HTTPMethod: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery,
+		Body: string(raw), Header: r.Header.Clone(),
+	})
 	n.mu.Unlock()
 
 	if b.Latency > 0 {
@@ -173,8 +184,14 @@ func (n *Node) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case b.RawBody != "":
 		payload = []byte(b.RawBody)
+	case b.TronError != "":
+		payload = mustJSON(map[string]any{"Error": b.TronError})
+	case b.TronResultCode != "":
+		payload = mustJSON(map[string]any{"result": map[string]any{"code": b.TronResultCode, "message": hex.EncodeToString([]byte(b.TronResultCode))}})
 	case b.RPCError != "":
 		payload = mustJSON(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": b.RPCError}})
+	case n.Type == config.ChainTypeTron && r.URL.Path != "/jsonrpc":
+		payload = mustJSON(n.tronResult(r, b, string(raw)))
 	default:
 		payload = mustJSON(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": n.result(req.Method, b)})
 	}
@@ -207,6 +224,22 @@ func (n *Node) result(method string, b Behavior) any {
 	default:
 		// Identify the node in the result so tests can see who answered.
 		return map[string]any{"node": n.Name, "method": method}
+	}
+}
+
+// tronResult mimics the Tron HTTP API: getnowblock returns a block, anything
+// else echoes the request so tests can see what reached the node.
+func (n *Node) tronResult(r *http.Request, b Behavior, body string) any {
+	switch r.URL.Path {
+	case "/wallet/getnowblock", "/walletsolidity/getnowblock":
+		return map[string]any{
+			"blockID":      fmt.Sprintf("%064x", b.Block),
+			"block_header": map[string]any{"raw_data": map[string]any{"number": b.Block, "timestamp": time.Now().UnixMilli()}},
+		}
+	default:
+		return map[string]any{
+			"node": n.Name, "httpMethod": r.Method, "path": r.URL.Path, "query": r.URL.RawQuery, "body": body,
+		}
 	}
 }
 

@@ -155,7 +155,7 @@ func (m *Manager) RunOnce(ctx context.Context) {
 			defer wg.Done()
 			cctx, cancel := context.WithTimeout(ctx, m.opts.Timeout)
 			defer cancel()
-			block, err := fetchHead(cctx, m.client, t.cfg.HTTPURL, m.typ)
+			block, err := fetchHead(cctx, m.client, t.cfg, m.typ)
 			results[i] = checkResult{block: block, err: err}
 		}(i, t)
 	}

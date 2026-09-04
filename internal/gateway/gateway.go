@@ -61,6 +61,7 @@ func New(cfg *config.Config, log *zap.Logger, observer events.Observer) (*Gatewa
 		}, observer)
 		p, err := proxy.New(proxy.Options{
 			Chain:           key,
+			Type:            chainCfg.Type,
 			Targets:         chainCfg.Targets,
 			Exceptions:      cfg.ExceptionsFor(key),
 			UpstreamTimeout: cfg.Server.UpstreamTimeout,

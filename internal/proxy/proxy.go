@@ -25,6 +25,7 @@ const DefaultMaxBodyBytes int64 = 8 << 20
 // Options configure a Proxy.
 type Options struct {
 	Chain           string
+	Type            config.ChainType
 	Targets         []config.Target
 	Exceptions      []config.Exception
 	UpstreamTimeout time.Duration
@@ -80,7 +81,7 @@ func New(opts Options, manager *Manager) (*Proxy, error) {
 	}
 	p := &Proxy{opts: opts, manager: manager, observer: opts.Observer}
 	for _, t := range opts.Targets {
-		httpProxy, wsProxy, err := newReverseProxies(t, opts.UpstreamTimeout)
+		httpProxy, wsProxy, err := newReverseProxies(t, opts.Type, opts.UpstreamTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -139,6 +140,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body = &requestBody{raw: raw, gzip: strings.EqualFold(r.Header.Get("Content-Encoding"), "gzip")}
 	}
 	method := rpcMethod(body)
+	if method == "" {
+		method = r.Method + " " + r.URL.Path // Tron HTTP API and anything non JSON-RPC
+	}
 
 	var excluded []int
 	for {

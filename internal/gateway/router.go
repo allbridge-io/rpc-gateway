@@ -48,6 +48,7 @@ func (g *Gateway) Status() Status {
 //	GET  /status           JSON snapshot of chains and targets
 //	POST /{chain}          JSON-RPC request for the chain (key is case-insensitive)
 //	GET  /{chain}          WebSocket upgrade for the chain
+//	ANY  /{chain}/{path}   pass-through chains (Tron): path and query go to the target
 func (g *Gateway) newRouter() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -61,8 +62,8 @@ func (g *Gateway) newRouter() http.Handler {
 }
 
 func (g *Gateway) serveChain(w http.ResponseWriter, r *http.Request) {
-	key := strings.Trim(r.URL.Path, "/")
-	if key == "" || strings.Contains(key, "/") {
+	key, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if key == "" {
 		writeJSONError(w, http.StatusNotFound, "unknown route; use /{chain}, /status or /healthz")
 		return
 	}
@@ -71,12 +72,27 @@ func (g *Gateway) serveChain(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "unknown chain "+key+"; configured: "+strings.Join(g.order, ", "))
 		return
 	}
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if c.Type.PassThroughPath() {
+		// Hand the sub-path to the proxy; the target URL is completed there.
+		r.URL.Path = "/" + rest
+		r.URL.RawPath = ""
+		c.Proxy.ServeHTTP(w, r)
+		return
+	}
+
+	if strings.Trim(rest, "/") != "" {
+		writeJSONError(w, http.StatusNotFound, "chain "+c.Key+" serves a single endpoint; use /"+c.Key)
+		return
+	}
 	isUpgrade := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 	switch {
 	case r.Method == http.MethodPost, isUpgrade && r.Method == http.MethodGet:
 		c.Proxy.ServeHTTP(w, r)
-	case r.Method == http.MethodOptions:
-		w.WriteHeader(http.StatusNoContent)
 	default:
 		w.Header().Set("Allow", "POST, OPTIONS")
 		writeJSONError(w, http.StatusMethodNotAllowed, "use POST for JSON-RPC or a WebSocket upgrade")

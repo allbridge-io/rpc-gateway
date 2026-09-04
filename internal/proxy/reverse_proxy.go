@@ -13,9 +13,12 @@ import (
 )
 
 // newReverseProxies builds the HTTP and the WebSocket reverse proxy of a target.
-// Both forward to the target's own path and query (an API key often lives in
-// the query), ignoring the client's path, which is only used to pick the chain.
-func newReverseProxies(t config.Target, upstreamTimeout time.Duration) (httpProxy, wsProxy *httputil.ReverseProxy, err error) {
+//
+// For single-endpoint chains (EVM, Solana) both forward to the target's own
+// path and query (an API key often lives there), ignoring the client's path,
+// which is only used to pick the chain. For pass-through chains (Tron) the
+// client's sub-path and query are appended to the target URL.
+func newReverseProxies(t config.Target, typ config.ChainType, upstreamTimeout time.Duration) (httpProxy, wsProxy *httputil.ReverseProxy, err error) {
 	httpTarget, err := url.Parse(t.HTTPURL)
 	if err != nil {
 		return nil, nil, fmt.Errorf("target %s: parse http_url: %w", t.Name, err)
@@ -48,21 +51,43 @@ func newReverseProxies(t config.Target, upstreamTimeout time.Duration) (httpProx
 		ResponseHeaderTimeout: upstreamTimeout,
 	}
 
-	httpProxy = &httputil.ReverseProxy{Director: director(httpTarget), Transport: transport}
-	wsProxy = &httputil.ReverseProxy{Director: director(wsTarget), Transport: transport}
+	passThrough := typ.PassThroughPath()
+	httpProxy = &httputil.ReverseProxy{Director: director(httpTarget, passThrough, t.Headers), Transport: transport}
+	wsProxy = &httputil.ReverseProxy{Director: director(wsTarget, passThrough, t.Headers), Transport: transport}
 	return httpProxy, wsProxy, nil
 }
 
-func director(target *url.URL) func(*http.Request) {
+func director(target *url.URL, passThrough bool, headers map[string]string) func(*http.Request) {
 	return func(r *http.Request) {
 		r.URL.Scheme = target.Scheme
 		r.URL.Host = target.Host
-		r.URL.Path = target.Path
-		r.URL.RawPath = target.RawPath
-		r.URL.RawQuery = target.RawQuery
 		r.Host = target.Host
+		if passThrough {
+			// r.URL.Path is the sub-path after /{chain}, prepared by the router.
+			r.URL.Path = JoinURLPath(target.Path, r.URL.Path)
+			r.URL.RawPath = ""
+			r.URL.RawQuery = mergeQuery(target.RawQuery, r.URL.RawQuery)
+		} else {
+			r.URL.Path = target.Path
+			r.URL.RawPath = target.RawPath
+			r.URL.RawQuery = target.RawQuery
+		}
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
 		if _, ok := r.Header["User-Agent"]; !ok {
 			r.Header.Set("User-Agent", "") // do not let net/http add its default UA
 		}
+	}
+}
+
+func mergeQuery(targetQuery, clientQuery string) string {
+	switch {
+	case targetQuery == "":
+		return clientQuery
+	case clientQuery == "":
+		return targetQuery
+	default:
+		return targetQuery + "&" + clientQuery
 	}
 }

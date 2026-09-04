@@ -158,6 +158,34 @@ disable_keep_alives = true
 	}
 }
 
+func TestLoad_TronChainWithHeaders(t *testing.T) {
+	text := `
+[chains.TRX]
+type = "tron"
+[[chains.TRX.targets]]
+name = "TronGrid"
+http_url = "https://api.trongrid.io"
+headers = { "TRON-PRO-API-KEY" = "${TRONGRID_KEY}", "X-Team" = "allbridge" }
+`
+	cfg := mustLoad(t, LoadOptions{ConfigPath: writeFile(t, "c.toml", text), LookupEnv: envOf(map[string]string{"TRONGRID_KEY": "k"})})
+	trx := cfg.Chains["TRX"]
+	if trx.Type != ChainTypeTron || !trx.Type.PassThroughPath() {
+		t.Errorf("tron type: %+v", trx)
+	}
+	if got := trx.Targets[0].Headers; got["TRON-PRO-API-KEY"] != "k" || got["X-Team"] != "allbridge" {
+		t.Errorf("headers with placeholders: %v", got)
+	}
+	if ChainTypeEVM.PassThroughPath() || ChainTypeSolana.PassThroughPath() {
+		t.Error("only tron passes the sub-path through")
+	}
+
+	_, err := Load(LoadOptions{ConfigPath: writeFile(t, "bad.toml", strings.Replace(text, `"X-Team" = "allbridge"`, `"X-Team" = ""`, 1)),
+		LookupEnv: envOf(map[string]string{"TRONGRID_KEY": "k"})})
+	if err == nil || !strings.Contains(err.Error(), "Headers") {
+		t.Errorf("empty header value must be rejected, got %v", err)
+	}
+}
+
 func TestLoad_EnvPlaceholders(t *testing.T) {
 	text := `
 [chains.SPL]
@@ -377,7 +405,7 @@ func TestExampleConfigLoads(t *testing.T) {
 			t.Errorf("example config lacks chain %s", key)
 		}
 	}
-	if cfg.Chains["SOL"].Type != ChainTypeSolana {
-		t.Errorf("SOL must be solana type")
+	if cfg.Chains["SOL"].Type != ChainTypeSolana || cfg.Chains["TRX"].Type != ChainTypeTron {
+		t.Errorf("example chain types: SOL=%s TRX=%s", cfg.Chains["SOL"].Type, cfg.Chains["TRX"].Type)
 	}
 }
