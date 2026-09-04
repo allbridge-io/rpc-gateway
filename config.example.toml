@@ -180,6 +180,13 @@ http_url = "https://soroban-testnet.stellar.org"
 # headers = { "X-Api-Key" = "${SOROBAN_KEY}" }   # commercial RPCs authenticate with a header or in the URL
 
 # ---- horizon ----
+[chains.SRB_HORIZON]        # Stellar Horizon (testnet): REST API, the client's path is appended
+type = "horizon"            # health check: GET <base>/ -> history_latest_ledger
+max_block_lag = 5           # ledgers close every ~5s
+[[chains.SRB_HORIZON.targets]]
+name = "SDF"
+http_url = "https://horizon-testnet.stellar.org"   # base URL, the client's path is appended
+# headers = { "X-Api-Key" = "${HORIZON_KEY}" }     # commercial Horizon providers ask for one
 
 # ---- ton ----
 

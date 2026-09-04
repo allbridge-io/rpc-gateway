@@ -141,6 +141,12 @@ name = "SDF"
 http_url = "https://soroban-testnet.stellar.org"
 
 # ---- horizon ----
+[chains.SRB_HORIZON]        # Stellar Horizon, testnet
+type = "horizon"
+max_block_lag = 5
+[[chains.SRB_HORIZON.targets]]
+name = "SDF"
+http_url = "https://horizon-testnet.stellar.org"
 
 # ---- ton ----
 

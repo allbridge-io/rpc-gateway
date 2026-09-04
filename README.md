@@ -53,7 +53,7 @@ target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error
 | `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
 | `sui` | `sui_getLatestCheckpointSequenceNumber` | ignored | Sui JSON-RPC; the checkpoint sequence number plays the role of the block number (u64 as a decimal string) |
 | `soroban` | `getHealth` | ignored | Stellar Soroban RPC; `getHealth` carries `latestLedger` and the server's own verdict, while `getLatestLedger` now ships the whole ledger meta |
-| `horizon` | _planned_ | | |
+| `horizon` | `GET /` → `history_latest_ledger` | appended to the target base URL together with the query | Stellar Horizon REST API; its `problem+json` 4xx (unknown or malformed account) is a client error and passes through |
 | `ton` | _planned_ | | |
 | `stacks` | _planned_ | | |
 
