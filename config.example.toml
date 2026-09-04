@@ -161,6 +161,14 @@ ws_url = "wss://api.devnet.solana.com"
 # block goes directly under the anchor of its type.
 
 # ---- sui ----
+[chains.SUI]                # Sui testnet: one JSON-RPC endpoint, no sub-paths
+type = "sui"
+max_block_lag = 100         # a checkpoint every ~250ms, so 100 is about 25 seconds
+[[chains.SUI.targets]]
+name = "PublicNode"
+http_url = "https://sui-testnet-rpc.publicnode.com"
+# The Sui foundation fullnodes (fullnode.testnet.sui.io) no longer serve
+# JSON-RPC; providers that still do are what this type talks to.
 
 # ---- soroban ----
 
