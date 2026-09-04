@@ -54,7 +54,7 @@ target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error
 | `sui` | `sui_getLatestCheckpointSequenceNumber` | ignored | Sui JSON-RPC; the checkpoint sequence number plays the role of the block number (u64 as a decimal string) |
 | `soroban` | `getHealth` | ignored | Stellar Soroban RPC; `getHealth` carries `latestLedger` and the server's own verdict, while `getLatestLedger` now ships the whole ledger meta |
 | `horizon` | `GET /` → `history_latest_ledger` | appended to the target base URL together with the query | Stellar Horizon REST API; its `problem+json` 4xx (unknown or malformed account) is a client error and passes through |
-| `ton` | _planned_ | | |
+| `ton` | `GET /api/v3/masterchainInfo` (`last.seqno`) | appended to the target base URL together with the query | toncenter: the v3 REST API and `POST /api/v2/jsonRPC`; API key via `headers = { "X-API-Key" = "..." }` |
 | `stacks` | _planned_ | | |
 
 A chain type is one file in [internal/chaintype](internal/chaintype) that

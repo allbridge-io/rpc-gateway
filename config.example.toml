@@ -189,5 +189,12 @@ http_url = "https://horizon-testnet.stellar.org"   # base URL, the client's path
 # headers = { "X-Api-Key" = "${HORIZON_KEY}" }     # commercial Horizon providers ask for one
 
 # ---- ton ----
+[chains.TON]                # TON testnet through toncenter: the v3 REST API and /api/v2/jsonRPC
+type = "ton"
+max_block_lag = 5           # masterchain blocks every ~5s
+[[chains.TON.targets]]
+name = "Toncenter"
+http_url = "https://testnet.toncenter.com"   # base URL, the client's path is appended
+# headers = { "X-API-Key" = "${TONCENTER_KEY}" }  # toncenter allows ~1 request/second without a key
 
 # ---- stacks ----
