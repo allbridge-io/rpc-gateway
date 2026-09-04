@@ -272,6 +272,31 @@ Export failures (wrong token, endpoint down) are logged to stdout as
 `export error` and never affect request handling; the SDK batches and
 retries. Metrics are sent every `OTEL_METRIC_EXPORT_INTERVAL` ms (default 60000).
 
+## Dashboard
+
+[grafana/rpc-gateway-dashboard.json](grafana/rpc-gateway-dashboard.json) is the
+day-to-day view; Explore is only for ad-hoc digging. Import it once:
+
+1. Grafana → **Dashboards** → **New** → **Import**
+2. Paste the file contents (or upload it) → **Load**
+3. Pick the stack's Prometheus and Loki data sources (`...-prom`, `...-logs`) → **Import**
+
+Panels:
+
+- **Targets** — a table with one row per upstream: chain, target, routable
+  (green OK / red DOWN), latest block, lag. The same information as
+  `GET /status`, sortable and filterable.
+- **Routable targets per chain** — turns red when a chain has none left.
+- **Requests per second** — traffic per chain, split into ok and error.
+- **Reroutes, taints and outages** — the failover activity; a line on
+  "NO HEALTHY" means clients were getting 503.
+- **Upstream latency p95** — how slow the providers are.
+- **Warnings and errors** — the log stream, click a line for its fields.
+
+The **Chain** dropdown at the top filters every panel. Re-import the file
+after changing it in the UI (Dashboard settings → JSON Model → copy back into
+the repo) so the dashboard stays version-controlled.
+
 ## Layout
 
 ```
