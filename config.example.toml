@@ -173,3 +173,11 @@ ws_url = "wss://api.devnet.solana.com"
 # ---- algorand_indexer ----
 
 # ---- stacks ----
+
+[chains.STX]                # Stacks testnet through the Hiro API (it also serves the node's /v2/*)
+type = "stacks"
+max_block_lag = 5           # Stacks blocks are seconds apart since Nakamoto
+[[chains.STX.targets]]
+name = "Hiro"
+http_url = "https://api.testnet.hiro.so"      # base URL, the client's path is appended
+# headers = { "x-api-key" = "${HIRO_KEY}" }   # a Hiro Platform key raises the rate limit

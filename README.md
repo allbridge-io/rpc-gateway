@@ -57,7 +57,7 @@ target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error
 | `ton` | _planned_ | | |
 | `algorand` | _planned_ | | |
 | `algorand_indexer` | _planned_ | | |
-| `stacks` | _planned_ | | |
+| `stacks` | `GET /v2/info` (`stacks_tip_height`) | appended to the target base URL together with the query | Hiro API: Hiro's `/extended/*` and the node's `/v2/*` under one prefix |
 
 A chain type is one file in [internal/chaintype](internal/chaintype) that
 registers its name, its health check and whether the client's sub-path is
