@@ -31,6 +31,8 @@ jobs:
           key: cache-${{ hashFiles('**/go.sum') }}
       - name: Run tests
         run: go test -race -shuffle=on -count=1 ./...
+      - name: Compile testnet tests
+        run: go test -tags testnet -run '^$' ./tests/testnet/...
 
   vulncheck:
     runs-on: ubuntu-latest

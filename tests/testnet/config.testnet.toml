@@ -1,0 +1,45 @@
+# Public testnet endpoints used by `make test-testnet`. No API keys required.
+# Override with TESTNET_CONFIG_TOML_PATH (and SECRET_CONFIG_TOML_PATH) to test
+# your own providers, e.g. the real Render secret file against testnets.
+
+[server]
+port = 1                    # replaced by an OS-assigned free port in the tests
+upstream_timeout = "10s"
+
+[healthchecks]
+interval = "5s"
+timeout = "8s"
+failure_threshold = 1       # the injected dead target must drop out on the first round
+success_threshold = 1
+
+[chains.SPL]                # Ethereum Sepolia
+type = "evm"
+chain_id = "0xaa36a7"
+[[chains.SPL.targets]]
+name = "PublicNode"
+http_url = "https://ethereum-sepolia-rpc.publicnode.com"
+
+[chains.ARB]                # Arbitrum Sepolia
+type = "evm"
+chain_id = "0x66eee"
+[[chains.ARB.targets]]
+name = "Arbitrum"
+http_url = "https://sepolia-rollup.arbitrum.io/rpc"
+
+[chains.SOL]                # Solana devnet
+type = "solana"
+max_block_lag = 100
+[[chains.SOL.targets]]
+name = "Public"
+http_url = "https://api.devnet.solana.com"
+ws_url = "wss://api.devnet.solana.com"
+
+[chains.TRX]                # Tron Shasta
+type = "tron"
+chain_id = "0x94a9059e"
+max_block_lag = 5
+[[chains.TRX.exceptions]]
+match = "SERVER_BUSY"
+[[chains.TRX.targets]]
+name = "TronGrid"
+http_url = "https://api.shasta.trongrid.io"
