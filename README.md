@@ -37,7 +37,7 @@ target; the client only sees the final answer. The response header
 |---|---|
 | `POST /{chain}` | JSON-RPC request for the chain (key is case-insensitive, e.g. `/SPL`, `/sol`) |
 | `GET /{chain}` + `Upgrade: websocket` | WebSocket, proxied to the target's `ws_url` (Solana subscriptions) |
-| `ANY /{chain}/{path}` | Tron only: the path and query are forwarded to the target (`/TRX/wallet/getnowblock`, `/TRX/v1/...`, `/TRX/jsonrpc`) |
+| `ANY /{chain}/{path}` | pass-through chain types only (`tron`, `horizon`, `ton`, `stacks`): the method, path and query are forwarded to the target (`/TRX/wallet/getnowblock`, `/TON/api/v3/masterchainInfo`, `/STX/v2/info`) |
 | `GET /status` | JSON snapshot of every chain and target: routable, block number, lag, taint, last error |
 | `GET /healthz` | Liveness for Render: `{"healthy":true}` whenever the process is up (never depends on upstreams) |
 
@@ -234,7 +234,7 @@ and run with `LOG_LEVEL=debug`; roughly every second request will show
 ```bash
 make test           # unit + integration tests, offline, ~5s
 make test-race      # same with the race detector (CI)
-make test-testnet   # real calls through the gateway against public testnets, ~15s
+make test-testnet   # real calls through the gateway against public testnets, ~100s
 ```
 
 The offline suite uses a programmable fake RPC node
@@ -247,10 +247,13 @@ gzip bodies, Tron-style error bodies. Each chain type is simulated by its own
 
 The testnet suite ([tests/testnet](tests/testnet)) starts the real gateway on
 every chain of `tests/testnet/config.testnet.toml` — the thirteen EVM testnets
-of the table above, Solana devnet and Tron Shasta — injects a dead target into
-every chain, and verifies per chain type that real calls work (each EVM chain's
-`eth_chainId` against the configured one, a Solana WebSocket subscription, the
-Tron `/wallet`, `/v1` and `/jsonrpc` APIs), that the dead target is detected and
+of the table above, Solana devnet, Tron Shasta, Sui testnet, Stellar testnet
+(Soroban RPC and Horizon), TON testnet via toncenter and Stacks testnet via the
+Hiro API — injects a dead target into every chain, and verifies per chain type
+that real calls work (each EVM chain's `eth_chainId` against the configured one,
+a Solana WebSocket subscription, the Tron `/wallet`, `/v1` and `/jsonrpc` APIs,
+and for every new type its own read-only calls plus a client error that must
+pass through instead of rerouting), that the dead target is detected and
 never used, and, in a second run, that a request landing on it is rerouted and
 the target tainted. The per-type checks live in `tests/testnet/checks_<type>_test.go`;
 a configured chain whose type registers none fails the suite. Point it at your own providers with
