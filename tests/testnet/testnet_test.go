@@ -76,12 +76,18 @@ func loadConfig(t *testing.T) *config.Config {
 	return cfg
 }
 
-func startGateway(t *testing.T) *env {
+// startGateway loads the testnet config, applies the optional mutators and
+// runs the gateway on a free port until the test ends. Events go both to the
+// log (visible with -v) and to a Recorder the assertions read.
+func startGateway(t *testing.T, mutate ...func(*config.Config)) *env {
 	t.Helper()
 	cfg := loadConfig(t)
+	for _, fn := range mutate {
+		fn(cfg)
+	}
 	logger, _ := zap.NewDevelopment()
 	rec := &events.Recorder{}
-	gw, err := gateway.New(cfg, logger, multiObserver{rec, events.NewLogger(logger)})
+	gw, err := gateway.New(cfg, logger, events.Multi{rec, events.NewLogger(logger)})
 	if err != nil {
 		t.Fatalf("gateway.New: %v", err)
 	}
@@ -104,35 +110,6 @@ func startGateway(t *testing.T) *env {
 	}
 	t.Logf("gateway listening on %s with chains %v", addr, cfg.ChainKeys())
 	return &env{cfg: cfg, gw: gw, base: "http://" + addr, rec: rec, http: &http.Client{Timeout: requestTimeout}}
-}
-
-// multiObserver fans events out to a recorder (for assertions) and the log.
-type multiObserver []events.Observer
-
-func (m multiObserver) TargetHealthChanged(c, t string, h bool, r string) {
-	for _, o := range m {
-		o.TargetHealthChanged(c, t, h, r)
-	}
-}
-func (m multiObserver) TargetTainted(c, t, r string, d time.Duration) {
-	for _, o := range m {
-		o.TargetTainted(c, t, r, d)
-	}
-}
-func (m multiObserver) RequestRerouted(c, t, r string) {
-	for _, o := range m {
-		o.RequestRerouted(c, t, r)
-	}
-}
-func (m multiObserver) NoHealthyTargets(c string, n int) {
-	for _, o := range m {
-		o.NoHealthyTargets(c, n)
-	}
-}
-func (m multiObserver) UpstreamRequest(c, t, meth string, s int, d time.Duration, err error) {
-	for _, o := range m {
-		o.UpstreamRequest(c, t, meth, s, d, err)
-	}
 }
 
 // --- helpers ---
@@ -443,28 +420,13 @@ func absDiff(a, b uint64) uint64 {
 // kept "healthy" by a huge failure threshold, so requests do land on it and
 // must be rerouted to a live provider, after which the taint keeps it out.
 func TestTestnetReroute(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.HealthChecks.FailureThreshold = 1000 // never mark the dead target unhealthy by checks
-	taint := 30 * time.Second
-	cfg.HealthChecks.TaintDuration = &taint
-
-	logger, _ := zap.NewDevelopment()
-	rec := &events.Recorder{}
-	gw, err := gateway.New(cfg, logger, multiObserver{rec, events.NewLogger(logger)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- gw.ListenAndServe(ctx) }()
-	t.Cleanup(func() { cancel(); <-done })
-	addrCtx, addrCancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer addrCancel()
-	addr, err := gw.Addr(addrCtx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e := &env{cfg: cfg, gw: gw, base: "http://" + addr, rec: rec, http: &http.Client{Timeout: requestTimeout}}
+	e := startGateway(t, func(cfg *config.Config) {
+		cfg.HealthChecks.FailureThreshold = 1000 // never mark the dead target unhealthy by checks
+		// Long enough that even ten slow testnet calls cannot outlive the taint.
+		taint := 5 * time.Minute
+		cfg.HealthChecks.TaintDuration = &taint
+	})
+	rec, gw, cfg := e.rec, e.gw, e.cfg
 
 	for _, key := range cfg.ChainKeys() {
 		key := key
