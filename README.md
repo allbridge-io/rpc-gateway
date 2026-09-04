@@ -178,7 +178,15 @@ make run
 ```
 
 ```bash
-curl -s localhost:3000/status | python3 -m json.tool
+curl -s localhost:3000/status | python3 -c '
+import json,sys
+d = json.load(sys.stdin)["chains"]
+for k in sorted(d):
+    c = d[k]
+    print(k, c["type"], "routable", c["routableTargets"], "of", len(c["targets"]))
+    for t in c["targets"]:
+        print("   ", t["name"], "OK" if t["routable"] else "DOWN", t["blockNumber"], t.get("lastError", "")[:60])
+'
 curl -s localhost:3000/SPL -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
 curl -s -X POST localhost:3000/TRX/wallet/getnowblock
