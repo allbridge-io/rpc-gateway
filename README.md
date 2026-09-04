@@ -48,9 +48,32 @@ target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error
 
 | `type` | Health check | Client path | Notes |
 |---|---|---|---|
-| `evm` | `eth_blockNumber` | ignored; the target URL is used as-is (API keys often live there) | Ethereum, Arbitrum, BSC, ... |
+| `evm` | `eth_blockNumber` | ignored; the target URL is used as-is (API keys often live there) | any EVM network; `chain_id` is verified by the testnet suite |
 | `solana` | `getSlot` | ignored | WebSocket goes to `ws_url` (defaults to `http_url` with ws scheme) |
 | `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
+
+The EVM chains shipped in [config.example.toml](config.example.toml) and in the
+testnet config, with the testnet each key points at and its `chain_id`:
+
+| Key | Network | `chain_id` |
+|---|---|---|
+| `SPL` | Ethereum Sepolia | `0xaa36a7` |
+| `ETH` | Ethereum Sepolia | `0xaa36a7` |
+| `ARB` | Arbitrum Sepolia | `0x66eee` |
+| `BSC` | BNB Smart Chain testnet | `0x61` |
+| `POL` | Polygon Amoy | `0x13882` |
+| `AVA` | Avalanche Fuji C-Chain | `0xa869` |
+| `OPT` | Optimism Sepolia | `0xaa37dc` |
+| `BAS` | Base Sepolia | `0x14a34` |
+| `CEL` | Celo Sepolia | `0xaa044c` |
+| `SNC` | Sonic testnet | `0x3909` |
+| `UNI` | Unichain Sepolia | `0x515` |
+| `LIN` | Linea Sepolia | `0xe705` |
+| `OKX` | OKX X Layer testnet | `0x7a0` |
+
+`SPL` is what the backend calls Ethereum Sepolia, so `SPL` and `ETH` are the
+same network under two keys. Mainnet deployments keep the keys and swap the
+targets and `chain_id` in the secret config file.
 
 ## How health works
 
@@ -212,12 +235,13 @@ gzip bodies, Tron-style error bodies. Health rounds are driven synchronously
 (`Manager.RunOnce`) so tests never sleep.
 
 The testnet suite ([tests/testnet](tests/testnet)) starts the real gateway on
-Sepolia, Arbitrum Sepolia, Solana devnet and Tron Shasta, injects a dead
-target into every chain, and verifies per chain type that real calls work
-(including a Solana WebSocket subscription and the Tron `/wallet`, `/v1`
-and `/jsonrpc` APIs), that the dead target is detected and never used, and,
-in a second run, that a request landing on it is rerouted and the target
-tainted. Point it at your own providers with
+every chain of `tests/testnet/config.testnet.toml` — the thirteen EVM testnets
+of the table above, Solana devnet and Tron Shasta — injects a dead target into
+every chain, and verifies per chain type that real calls work (each EVM chain's
+`eth_chainId` against the configured one, a Solana WebSocket subscription, the
+Tron `/wallet`, `/v1` and `/jsonrpc` APIs), that the dead target is detected and
+never used, and, in a second run, that a request landing on it is rerouted and
+the target tainted. Point it at your own providers with
 `TESTNET_CONFIG_TOML_PATH=... [SECRET_CONFIG_TOML_PATH=...] make test-testnet`;
 `TESTNET_CHAINS=SOL,TRX` filters chains.
 

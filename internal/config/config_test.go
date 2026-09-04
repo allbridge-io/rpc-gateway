@@ -408,4 +408,31 @@ func TestExampleConfigLoads(t *testing.T) {
 	if cfg.Chains["SOL"].Type != ChainTypeSolana || cfg.Chains["TRX"].Type != ChainTypeTron {
 		t.Errorf("example chain types: SOL=%s TRX=%s", cfg.Chains["SOL"].Type, cfg.Chains["TRX"].Type)
 	}
+
+	// The EVM testnets the gateway ships with. Every one of them must declare a
+	// chain_id, and no two of them may declare the same one: a copy-pasted
+	// chain_id would silently point a key at the wrong network, and the testnet
+	// suite verifies each value with a real eth_chainId call.
+	evmKeys := []string{"SPL", "ARB", "ETH", "BSC", "POL", "AVA", "OPT", "BAS", "CEL", "SNC", "UNI", "LIN", "OKX"}
+	byChainID := map[string]string{}
+	for _, key := range evmKeys {
+		chain, ok := cfg.Chains[key]
+		if !ok {
+			t.Errorf("example config lacks EVM chain %s", key)
+			continue
+		}
+		if chain.Type != ChainTypeEVM {
+			t.Errorf("%s: type %q, want evm", key, chain.Type)
+		}
+		if chain.ChainID == "" {
+			t.Errorf("%s: chain_id is not set", key)
+			continue
+		}
+		// SPL and ETH are both Ethereum Sepolia on purpose (SPL is the name the
+		// backend uses for it), so they are the one allowed pair.
+		if prev, dup := byChainID[strings.ToLower(chain.ChainID)]; dup && (prev != "SPL" || key != "ETH") {
+			t.Errorf("%s and %s both use chain_id %s", prev, key, chain.ChainID)
+		}
+		byChainID[strings.ToLower(chain.ChainID)] = key
+	}
 }

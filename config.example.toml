@@ -52,6 +52,83 @@ chain_id = "0x66eee"
 name = "Arbitrum"
 http_url = "https://sepolia-rollup.arbitrum.io/rpc"
 
+[chains.ETH]                # Ethereum Sepolia (same network as SPL, kept under its own key)
+type = "evm"
+chain_id = "0xaa36a7"
+[[chains.ETH.targets]]
+name = "PublicNode"
+http_url = "https://ethereum-sepolia-rpc.publicnode.com"
+
+[chains.BSC]                # BNB Smart Chain testnet
+type = "evm"
+chain_id = "0x61"
+[[chains.BSC.targets]]
+name = "PublicNode"
+http_url = "https://bsc-testnet-rpc.publicnode.com"
+
+[chains.POL]                # Polygon Amoy
+type = "evm"
+chain_id = "0x13882"
+[[chains.POL.targets]]
+name = "PublicNode"
+http_url = "https://polygon-amoy-bor-rpc.publicnode.com"
+
+[chains.AVA]                # Avalanche Fuji C-Chain
+type = "evm"
+chain_id = "0xa869"
+[[chains.AVA.targets]]
+name = "PublicNode"
+http_url = "https://avalanche-fuji-c-chain-rpc.publicnode.com"
+
+[chains.OPT]                # Optimism Sepolia
+type = "evm"
+chain_id = "0xaa37dc"
+[[chains.OPT.targets]]
+name = "PublicNode"
+http_url = "https://optimism-sepolia-rpc.publicnode.com"
+
+[chains.BAS]                # Base Sepolia
+type = "evm"
+chain_id = "0x14a34"
+[[chains.BAS.targets]]
+name = "PublicNode"
+http_url = "https://base-sepolia-rpc.publicnode.com"
+
+[chains.CEL]                # Celo Sepolia (Alfajores was sunset: its RPC host no longer resolves)
+type = "evm"
+chain_id = "0xaa044c"
+[[chains.CEL.targets]]
+name = "Forno"
+http_url = "https://forno.celo-sepolia.celo-testnet.org"
+
+[chains.SNC]                # Sonic testnet (chain 14601; the older Blaze testnet RPC is gone)
+type = "evm"
+chain_id = "0x3909"
+[[chains.SNC.targets]]
+name = "SonicLabs"
+http_url = "https://rpc.testnet.soniclabs.com"
+
+[chains.UNI]                # Unichain Sepolia
+type = "evm"
+chain_id = "0x515"
+[[chains.UNI.targets]]
+name = "Unichain"
+http_url = "https://sepolia.unichain.org"
+
+[chains.LIN]                # Linea Sepolia
+type = "evm"
+chain_id = "0xe705"
+[[chains.LIN.targets]]
+name = "Linea"
+http_url = "https://rpc.sepolia.linea.build"
+
+[chains.OKX]                # OKX X Layer testnet (chain 1952, the Sepolia-based one)
+type = "evm"
+chain_id = "0x7a0"
+[[chains.OKX.targets]]
+name = "XLayer"
+http_url = "https://testrpc.xlayer.tech"
+
 # ============================== Tron ==============================
 [chains.TRX]                # Tron Shasta: full HTTP API (/wallet/*, /walletsolidity/*, /v1/*, /jsonrpc)
 type = "tron"
