@@ -55,8 +55,6 @@ target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error
 | `soroban` | _planned_ | | |
 | `horizon` | _planned_ | | |
 | `ton` | _planned_ | | |
-| `algorand` | _planned_ | | |
-| `algorand_indexer` | _planned_ | | |
 | `stacks` | _planned_ | | |
 
 A chain type is one file in [internal/chaintype](internal/chaintype) that

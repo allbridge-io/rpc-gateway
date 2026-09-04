@@ -168,8 +168,4 @@ ws_url = "wss://api.devnet.solana.com"
 
 # ---- ton ----
 
-# ---- algorand ----
-
-# ---- algorand_indexer ----
-
 # ---- stacks ----
