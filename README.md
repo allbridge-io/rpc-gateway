@@ -52,7 +52,7 @@ target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error
 | `solana` | `getSlot` | ignored | WebSocket goes to `ws_url` (defaults to `http_url` with ws scheme) |
 | `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
 | `sui` | `sui_getLatestCheckpointSequenceNumber` | ignored | Sui JSON-RPC; the checkpoint sequence number plays the role of the block number (u64 as a decimal string) |
-| `soroban` | _planned_ | | |
+| `soroban` | `getHealth` | ignored | Stellar Soroban RPC; `getHealth` carries `latestLedger` and the server's own verdict, while `getLatestLedger` now ships the whole ledger meta |
 | `horizon` | _planned_ | | |
 | `ton` | _planned_ | | |
 | `stacks` | _planned_ | | |

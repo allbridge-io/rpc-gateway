@@ -171,6 +171,13 @@ http_url = "https://sui-testnet-rpc.publicnode.com"
 # JSON-RPC; providers that still do are what this type talks to.
 
 # ---- soroban ----
+[chains.SRB]                # Stellar testnet, Soroban RPC (single JSON-RPC endpoint)
+type = "soroban"
+max_block_lag = 5           # ledgers close every ~5s
+[[chains.SRB.targets]]
+name = "SDF"
+http_url = "https://soroban-testnet.stellar.org"
+# headers = { "X-Api-Key" = "${SOROBAN_KEY}" }   # commercial RPCs authenticate with a header or in the URL
 
 # ---- horizon ----
 
