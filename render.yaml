@@ -36,3 +36,10 @@ services:
       # API keys referenced from the TOML as ${ALCHEMY_KEY} etc. are set in the dashboard:
       # - key: ALCHEMY_KEY
       #   sync: false
+      # Logs and metrics to Grafana Cloud over OTLP (optional; unset = disabled):
+      # - key: OTEL_EXPORTER_OTLP_ENDPOINT
+      #   value: https://otlp-gateway-prod-eu-west-2.grafana.net/otlp
+      # - key: OTEL_EXPORTER_OTLP_HEADERS
+      #   sync: false   # Authorization=Basic <base64 of instanceId:token>
+      # - key: OTEL_RESOURCE_ATTRIBUTES
+      #   value: deployment.environment=prod

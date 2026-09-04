@@ -161,6 +161,10 @@ when merged: a secret file can swap a chain's `targets`, not patch one entry.
 | `PORT` | `server.port` | listening port |
 | `LOG_LEVEL` | `info` | `debug` also logs every request and upstream attempt |
 | `LOG_FORMAT` | `json` | `console` for local reading |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | | set to enable OTLP export of logs and metrics (see below) |
+| `OTEL_EXPORTER_OTLP_HEADERS` | | `Authorization=Basic ...` for Grafana Cloud |
+| `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_METRIC_EXPORT_INTERVAL` | | standard OpenTelemetry settings |
+| `OTLP_LOG_LEVEL` | `info` | minimum level of log lines exported over OTLP |
 
 A local `.env` file is loaded if present (see [.env.example](.env.example)).
 
@@ -216,9 +220,8 @@ runtime, `make build-render`, `./app`, health check on `/healthz`. The TOML
 config is a Render **secret file** mounted at `/etc/secrets/config.toml`
 (`CONFIG_TOML_PATH` points there); API keys referenced as `${NAME}` are plain
 environment variables. Logs are JSON on stdout; Render keeps them 7 days on
-Hobby and 14 on Pro. Shipping them (and a few metrics) to Grafana Cloud over
-OTLP is the next step: the gateway emits every notable event through an
-`events.Observer`, so the exporter plugs in next to the logger.
+Hobby and 14 on Pro. For longer history and dashboards, enable the OTLP
+export to Grafana Cloud below.
 
 ## Observability
 
@@ -229,6 +232,37 @@ with method, status and duration (debug level). `events.Logger` writes them
 with zap, `events.Multi` fans them out to several sinks, `events.Recorder`
 is used by tests. There is no Prometheus endpoint by design: nothing on
 Render scrapes it, and Grafana Cloud accepts pushed OTLP data instead.
+
+### Grafana Cloud over OTLP
+
+Set the standard OpenTelemetry variables (Grafana Cloud stack →
+Connections → OpenTelemetry (OTLP) → Configure generates them) and the
+gateway pushes directly to the OTLP gateway, no agent needed:
+
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-eu-west-2.grafana.net/otlp
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20<base64 of instanceId:token>
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod
+```
+
+What is exported ([internal/telemetry](internal/telemetry)):
+
+- **Logs**: every log line at `OTLP_LOG_LEVEL` (default `info`) or above,
+  with its fields as attributes, so `chain`, `target`, `reason` are
+  filterable in Loki. Health changes, taints, reroutes and "no healthy
+  targets" are all `info`/`warn`/`error`; per-request lines stay at `debug`.
+- **Metrics** (attributes `chain`, `target`): `rpc_gateway.upstream.requests`
+  and `rpc_gateway.upstream.duration` (+ `method`, `outcome`),
+  `rpc_gateway.reroutes`, `rpc_gateway.target.taints`,
+  `rpc_gateway.target.health_changes`, `rpc_gateway.no_healthy_targets`,
+  and gauges `rpc_gateway.target.routable`, `rpc_gateway.target.block_number`,
+  `rpc_gateway.target.lag`. Tron paths are cut to two segments in `method`
+  so addresses never become label values. A few hundred series at most,
+  far below the free tier's 10k.
+
+Export failures (wrong token, endpoint down) are logged to stdout as
+`export error` and never affect request handling; the SDK batches and
+retries. Metrics are sent every `OTEL_METRIC_EXPORT_INTERVAL` ms (default 60000).
 
 ## Layout
 
