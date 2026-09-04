@@ -8,7 +8,7 @@
   ],
   "editable": true,
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -120,9 +120,17 @@
         "x": 0,
         "y": 0,
         "w": 24,
-        "h": 9
+        "h": 10
       },
       "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(chain|target|Value #[ABC])$"
+            }
+          }
+        },
         {
           "id": "merge",
           "options": {}
@@ -130,22 +138,7 @@
         {
           "id": "organize",
           "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "job": true,
-              "instance": true,
-              "service_name": true,
-              "service_version": true,
-              "deployment_environment": true,
-              "telemetry_sdk_language": true,
-              "telemetry_sdk_name": true,
-              "telemetry_sdk_version": true,
-              "otel_scope_name": true,
-              "otel_scope_version": true,
-              "host_name": true,
-              "process_runtime_name": true
-            },
+            "excludeByName": {},
             "renameByName": {
               "chain": "Chain",
               "target": "Target",
@@ -329,7 +322,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 9,
+        "y": 10,
         "w": 6,
         "h": 7
       },
@@ -337,7 +330,6 @@
         "defaults": {
           "unit": "short",
           "min": 0,
-          "max": 4,
           "decimals": 0,
           "thresholds": {
             "mode": "absolute",
@@ -347,12 +339,8 @@
                 "value": null
               },
               {
-                "color": "orange",
-                "value": 1
-              },
-              {
                 "color": "green",
-                "value": 2
+                "value": 1
               }
             ]
           }
@@ -414,7 +402,7 @@
       ],
       "gridPos": {
         "x": 6,
-        "y": 9,
+        "y": 10,
         "w": 18,
         "h": 7
       },
@@ -504,7 +492,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 16,
+        "y": 17,
         "w": 12,
         "h": 8
       },
@@ -568,7 +556,7 @@
       ],
       "gridPos": {
         "x": 12,
-        "y": 16,
+        "y": 17,
         "w": 12,
         "h": 8
       },
@@ -627,7 +615,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 25,
         "w": 24,
         "h": 11
       },
