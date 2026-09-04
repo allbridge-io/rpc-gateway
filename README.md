@@ -53,7 +53,7 @@ target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error
 | `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
 | `sui` | _planned_ | | |
 | `soroban` | _planned_ | | |
-| `horizon` | _planned_ | | |
+| `horizon` | `GET /` → `history_latest_ledger` | appended to the target base URL together with the query | Stellar Horizon REST API; its `problem+json` 4xx (unknown or malformed account) is a client error and passes through |
 | `ton` | _planned_ | | |
 | `algorand` | _planned_ | | |
 | `algorand_indexer` | _planned_ | | |

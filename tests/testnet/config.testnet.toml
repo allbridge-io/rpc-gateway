@@ -129,6 +129,12 @@ http_url = "https://api.shasta.trongrid.io"
 # ---- soroban ----
 
 # ---- horizon ----
+[chains.SRB_HORIZON]        # Stellar Horizon, testnet
+type = "horizon"
+max_block_lag = 5
+[[chains.SRB_HORIZON.targets]]
+name = "SDF"
+http_url = "https://horizon-testnet.stellar.org"
 
 # ---- ton ----
 
