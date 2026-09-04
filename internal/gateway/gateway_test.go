@@ -339,8 +339,10 @@ func TestGateway_ListenAndServeGracefulShutdown(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status %d", resp.StatusCode)
 	}
-	if f.spl1.CallCount("eth_blockNumber")+f.spl2.CallCount("eth_blockNumber") < 2 {
-		t.Error("initial health round must run before serving")
+	// Exactly one round: the interval is 1h in the fixture, so any extra check
+	// would mean the startup round runs twice.
+	if got1, got2 := f.spl1.CallCount("eth_blockNumber"), f.spl2.CallCount("eth_blockNumber"); got1 != 1 || got2 != 1 {
+		t.Errorf("startup must check every target exactly once, got %d and %d", got1, got2)
 	}
 
 	cancel()

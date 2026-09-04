@@ -97,10 +97,12 @@ func (g *Gateway) RunHealthChecksOnce(ctx context.Context) {
 	wg.Wait()
 }
 
-// StartHealthChecks runs the periodic checks of every chain until ctx ends.
+// StartHealthChecks starts the periodic checks of every chain until ctx ends.
+// It does not run a round immediately: ListenAndServe already did one, and
+// checking every target twice at startup would only waste provider quota.
 func (g *Gateway) StartHealthChecks(ctx context.Context) {
 	for _, c := range g.chains {
-		go c.Manager.Start(ctx)
+		go c.Manager.StartTicker(ctx)
 	}
 }
 

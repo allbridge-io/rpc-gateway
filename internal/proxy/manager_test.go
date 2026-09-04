@@ -439,6 +439,30 @@ func TestManager_StartStopsWithContext(t *testing.T) {
 }
 
 // Run with -race: concurrent rounds, taints and reads must not race.
+// StartTicker must not check immediately: the gateway already ran a round.
+func TestManager_StartTickerSkipsTheImmediateRound(t *testing.T) {
+	a := fakenode.New(t, "A", config.ChainTypeEVM)
+	opts := defaultOpts()
+	opts.Interval = 50 * time.Millisecond
+	m := NewManager("SPL", config.ChainTypeEVM, targetsOf(a), opts, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.StartTicker(ctx)
+
+	time.Sleep(20 * time.Millisecond)
+	if got := a.CallCount(""); got != 0 {
+		t.Fatalf("StartTicker checked %d times before the first tick", got)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for a.CallCount("") == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if a.CallCount("") == 0 {
+		t.Fatal("StartTicker never ran a round")
+	}
+}
+
 func TestManager_ConcurrentUse(t *testing.T) {
 	a := fakenode.New(t, "A", config.ChainTypeEVM)
 	b := fakenode.New(t, "B", config.ChainTypeEVM)

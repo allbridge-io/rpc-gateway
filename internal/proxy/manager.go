@@ -126,8 +126,16 @@ func (m *Manager) Len() int { return len(m.targets) }
 func (m *Manager) Name(i int) string { return m.targets[i].cfg.Name }
 
 // Start runs a check round immediately and then every Interval until ctx ends.
+// Callers that already ran an initial round must use StartTicker instead, so
+// targets are not checked twice within milliseconds at startup.
 func (m *Manager) Start(ctx context.Context) {
 	m.RunOnce(ctx)
+	m.StartTicker(ctx)
+}
+
+// StartTicker runs a check round every Interval until ctx ends, without an
+// immediate one.
+func (m *Manager) StartTicker(ctx context.Context) {
 	ticker := time.NewTicker(m.opts.Interval)
 	defer ticker.Stop()
 	for {
