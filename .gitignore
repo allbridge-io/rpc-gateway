@@ -5,3 +5,4 @@ config.yml
 .env
 config.local.toml
 config.*.local.toml
+.claude/

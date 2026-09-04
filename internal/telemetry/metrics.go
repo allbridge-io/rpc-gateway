@@ -173,8 +173,11 @@ func (m *Metrics) UpstreamRequest(chain, target, method string, _ int, duration 
 }
 
 // NormalizeMethod keeps the method attribute low-cardinality. JSON-RPC method
-// names are used as-is; HTTP paths (Tron) are cut to "VERB /seg1/seg2" so
-// addresses and ids in deeper segments never become label values.
+// names are used as-is. HTTP paths (pass-through chains) are cut to
+// "VERB /seg1/seg2" and any id-looking segment (all digits, or a long token
+// with digits: hashes, addresses, ledger numbers) becomes "{id}", so
+// /accounts/GABC..., /ledgers/4501679 or /v2/accounts/<addr> never create one
+// series per account.
 func NormalizeMethod(method string) string {
 	verb, path, isPath := strings.Cut(method, " ")
 	if !isPath {
@@ -190,7 +193,34 @@ func NormalizeMethod(method string) string {
 	if len(segments) == 1 && segments[0] == "" {
 		return verb + " /"
 	}
+	for i, seg := range segments {
+		if looksLikeID(seg) {
+			segments[i] = "{id}"
+		}
+	}
 	return fmt.Sprintf("%s /%s", verb, strings.Join(segments, "/"))
+}
+
+// looksLikeID is deliberately simple: purely numeric segments, or long
+// segments that mix letters and digits (hex hashes, base58/base32 addresses,
+// Stellar strkeys). Short versioned segments such as "v2" stay as they are.
+func looksLikeID(seg string) bool {
+	if seg == "" {
+		return false
+	}
+	digits, letters := 0, 0
+	for _, r := range seg {
+		switch {
+		case r >= '0' && r <= '9':
+			digits++
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+			letters++
+		}
+	}
+	if digits == len(seg) {
+		return true
+	}
+	return len(seg) >= 16 && digits > 0 && letters > 0
 }
 
 func clampInt64(v uint64) int64 {
