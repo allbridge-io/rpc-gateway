@@ -8,7 +8,7 @@
   ],
   "editable": true,
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -348,7 +348,7 @@
         "overrides": []
       },
       "options": {
-        "displayMode": "gradient",
+        "displayMode": "basic",
         "orientation": "horizontal",
         "showUnfilled": true,
         "reduceOptions": {
