@@ -54,7 +54,7 @@ target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error
 | `sui` | _planned_ | | |
 | `soroban` | _planned_ | | |
 | `horizon` | _planned_ | | |
-| `ton` | _planned_ | | |
+| `ton` | `GET /api/v3/masterchainInfo` (`last.seqno`) | appended to the target base URL together with the query | toncenter: the v3 REST API and `POST /api/v2/jsonRPC`; API key via `headers = { "X-API-Key" = "..." }` |
 | `algorand` | _planned_ | | |
 | `algorand_indexer` | _planned_ | | |
 | `stacks` | _planned_ | | |

@@ -131,6 +131,12 @@ http_url = "https://api.shasta.trongrid.io"
 # ---- horizon ----
 
 # ---- ton ----
+[chains.TON]                # TON testnet (toncenter, ~1 request/second without a key)
+type = "ton"
+max_block_lag = 5
+[[chains.TON.targets]]
+name = "Toncenter"
+http_url = "https://testnet.toncenter.com"
 
 # ---- algorand ----
 
