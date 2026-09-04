@@ -7,6 +7,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -14,10 +15,14 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
+
+	"github.com/0xProject/rpc-gateway/internal/chaintype"
 )
 
-// ChainType tells the gateway which JSON-RPC dialect a chain speaks. It changes
-// how health checks are performed and whether WebSocket proxying is enabled.
+// ChainType tells the gateway which dialect a chain speaks. It changes how
+// health checks are performed and whether the client's sub-path is forwarded.
+// The valid values are the names registered in internal/chaintype; the
+// constants below only spare the rest of the code a string literal.
 type ChainType string
 
 const (
@@ -29,9 +34,11 @@ const (
 )
 
 // PassThroughPath tells whether the client's sub-path after /{chain} is
-// forwarded to the target (Tron) or ignored (single JSON-RPC endpoint).
+// forwarded to the target (REST APIs such as Tron) or ignored (single JSON-RPC
+// endpoint). An unknown type passes nothing through.
 func (t ChainType) PassThroughPath() bool {
-	return t == ChainTypeTron
+	spec, ok := chaintype.Lookup(string(t))
+	return ok && spec.PassThrough
 }
 
 // Config is the root of the TOML document.
@@ -100,7 +107,7 @@ type Exception struct {
 
 // Chain is one blockchain network served by the gateway.
 type Chain struct {
-	Type ChainType `toml:"type" validate:"required,oneof=evm solana tron"`
+	Type ChainType `toml:"type" validate:"required,chain_type"`
 	// ChainID is the value eth_chainId is expected to return (EVM only, hex like "0xaa36a7").
 	// Optional; used by testnet checks and startup sanity checks.
 	ChainID string `toml:"chain_id" validate:"omitempty,hexadecimal_prefixed"`
@@ -167,6 +174,10 @@ func newValidator() *validator.Validate {
 	_ = v.RegisterValidation("ws_url", func(fl validator.FieldLevel) bool {
 		return hasScheme(fl.Field().String(), "ws", "wss")
 	})
+	_ = v.RegisterValidation("chain_type", func(fl validator.FieldLevel) bool {
+		_, ok := chaintype.Lookup(fl.Field().String())
+		return ok
+	})
 	_ = v.RegisterValidation("hexadecimal_prefixed", func(fl validator.FieldLevel) bool {
 		s := fl.Field().String()
 		if !strings.HasPrefix(s, "0x") || len(s) < 3 {
@@ -180,6 +191,21 @@ func newValidator() *validator.Validate {
 		return true
 	})
 	return v
+}
+
+// describeValidationError appends the list of known chain types when a chain
+// declares an unknown one: the tag alone would not say what is allowed.
+func describeValidationError(err error) error {
+	var verrs validator.ValidationErrors
+	if !errors.As(err, &verrs) {
+		return err
+	}
+	for _, fe := range verrs {
+		if fe.Tag() == "chain_type" {
+			return fmt.Errorf("%w; known chain types: %s", err, strings.Join(chaintype.Names(), ", "))
+		}
+	}
+	return err
 }
 
 func hasScheme(raw string, schemes ...string) bool {

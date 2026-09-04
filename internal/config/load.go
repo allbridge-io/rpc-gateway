@@ -187,7 +187,7 @@ func decodeAndValidate(tree map[string]any) (*Config, error) {
 		return nil, fmt.Errorf("apply defaults: %w", err)
 	}
 	if err := newValidator().Struct(cfg); err != nil {
-		return nil, fmt.Errorf("validation: %w", err)
+		return nil, fmt.Errorf("validation: %w", describeValidationError(err))
 	}
 	return &cfg, nil
 }

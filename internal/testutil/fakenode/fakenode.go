@@ -1,12 +1,15 @@
 // Package fakenode is a programmable stand-in for an RPC node, used by tests
 // to simulate every way a real provider can misbehave: errors, slowness,
 // dropped connections, garbage responses, lagging blocks.
+//
+// What a node answers when it behaves comes from the simulation registered for
+// its chain type in sim_<type>.go (see sim.go); the failure knobs of Behavior
+// work the same for every type.
 package fakenode
 
 import (
 	"bytes"
 	"compress/gzip"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,15 +26,17 @@ import (
 
 // Behavior tells the node how to answer. The zero value is a healthy node at block 0.
 type Behavior struct {
-	// Block is the block number (EVM) or slot (Solana) reported by health calls.
+	// Block is the number the health call of the node's chain type reports:
+	// block, slot, ledger, checkpoint or round.
 	Block uint64
-	// ChainID is returned by eth_chainId (default "0x1").
+	// ChainID is returned by eth_chainId (default "0x1"), on EVM and Tron's /jsonrpc.
 	ChainID string
 	// Latency delays every response.
 	Latency time.Duration
 	// HTTPStatus, when not 0/200, is returned with a plain-text body.
 	HTTPStatus int
-	// RawBody, when set, is written verbatim (useful for invalid JSON).
+	// RawBody, when set, is written verbatim (useful for invalid JSON). With
+	// HTTPStatus it produces an API-shaped error body with a real status code.
 	RawBody string
 	// RPCError, when set, is returned as a JSON-RPC error for every method.
 	RPCError string
@@ -41,7 +46,8 @@ type Behavior struct {
 	Hang bool
 	// GzipResponse compresses the response body (Content-Encoding: gzip).
 	GzipResponse bool
-	// TronError makes a Tron node answer 200 with {"Error": "..."} (how Tron reports most failures).
+	// TronError makes a Tron node answer 200 with {"Error": "..."} (how Tron
+	// reports most failures); see sim_tron.go.
 	TronError string
 	// TronResultCode makes a Tron node answer 200 with {"result": {"code": "...", "message": "<hex>"}}.
 	TronResultCode string
@@ -131,13 +137,9 @@ func (n *Node) serve(w http.ResponseWriter, r *http.Request) {
 
 	raw, _ := io.ReadAll(r.Body)
 	var req struct {
-		ID     json.RawMessage `json:"id"`
-		Method string          `json:"method"`
+		Method string `json:"method"`
 	}
 	_ = json.Unmarshal(raw, &req)
-	if len(req.ID) == 0 {
-		req.ID = json.RawMessage("1")
-	}
 
 	n.mu.Lock()
 	n.log = append(n.log, Call{
@@ -174,73 +176,71 @@ func (n *Node) serve(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("X-Fake-Node", n.Name)
 	if b.HTTPStatus != 0 && b.HTTPStatus != http.StatusOK {
+		if b.RawBody != "" {
+			// A provider-shaped error body with a real status code, the way
+			// REST APIs report client errors and rate limits.
+			n.write(w, r, b, &Response{Status: b.HTTPStatus, Body: b.RawBody})
+			return
+		}
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(b.HTTPStatus)
 		fmt.Fprintf(w, "%s: upstream error %d", n.Name, b.HTTPStatus)
 		return
 	}
 
-	var payload []byte
+	n.write(w, r, b, n.payload(r, b, req.Method, string(raw)))
+}
+
+// payload picks what the node answers: the generic knobs first, then the
+// simulation of its chain type, then the generic echo.
+func (n *Node) payload(r *http.Request, b Behavior, rpcMethod, body string) any {
 	switch {
 	case b.RawBody != "":
-		payload = []byte(b.RawBody)
-	case b.TronError != "":
-		payload = mustJSON(map[string]any{"Error": b.TronError})
-	case b.TronResultCode != "":
-		payload = mustJSON(map[string]any{"result": map[string]any{"code": b.TronResultCode, "message": hex.EncodeToString([]byte(b.TronResultCode))}})
+		return &Response{Body: b.RawBody}
 	case b.RPCError != "":
-		payload = mustJSON(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": b.RPCError}})
-	case n.Type == config.ChainTypeTron && r.URL.Path != "/jsonrpc":
-		payload = mustJSON(n.tronResult(r, b, string(raw)))
-	default:
-		payload = mustJSON(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": n.result(req.Method, b)})
+		return RPCErrorBody(body, -32000, b.RPCError)
+	}
+	if sim, ok := simFor(n.Type); ok {
+		if p, handled := sim(n, r, b, rpcMethod, body); handled {
+			return p
+		}
+	}
+	// Identify the node in the result so tests can see who answered.
+	if rpcMethod == "" && n.Type.PassThroughPath() {
+		return n.Echo(r, body)
+	}
+	return RPCResult(body, map[string]any{"node": n.Name, "method": rpcMethod})
+}
+
+// write sends the payload, compressing it when the behavior and the client's
+// Accept-Encoding ask for it.
+func (n *Node) write(w http.ResponseWriter, r *http.Request, b Behavior, payload any) {
+	status := http.StatusOK
+	contentType := "application/json"
+	var data []byte
+	if resp, ok := payload.(*Response); ok {
+		if resp.Status != 0 {
+			status = resp.Status
+		}
+		if resp.ContentType != "" {
+			contentType = resp.ContentType
+		}
+		data = []byte(resp.Body)
+	} else {
+		data = mustJSON(payload)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", contentType)
 	if b.GzipResponse && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		var buf bytes.Buffer
 		zw := gzip.NewWriter(&buf)
-		_, _ = zw.Write(payload)
+		_, _ = zw.Write(data)
 		_ = zw.Close()
 		w.Header().Set("Content-Encoding", "gzip")
-		payload = buf.Bytes()
+		data = buf.Bytes()
 	}
-	_, _ = w.Write(payload)
-}
-
-func (n *Node) result(method string, b Behavior) any {
-	switch method {
-	case "eth_blockNumber":
-		return fmt.Sprintf("0x%x", b.Block)
-	case "getSlot":
-		return b.Block
-	case "eth_chainId":
-		if b.ChainID == "" {
-			return "0x1"
-		}
-		return b.ChainID
-	case "getHealth":
-		return "ok"
-	default:
-		// Identify the node in the result so tests can see who answered.
-		return map[string]any{"node": n.Name, "method": method}
-	}
-}
-
-// tronResult mimics the Tron HTTP API: getnowblock returns a block, anything
-// else echoes the request so tests can see what reached the node.
-func (n *Node) tronResult(r *http.Request, b Behavior, body string) any {
-	switch r.URL.Path {
-	case "/wallet/getnowblock", "/walletsolidity/getnowblock":
-		return map[string]any{
-			"blockID":      fmt.Sprintf("%064x", b.Block),
-			"block_header": map[string]any{"raw_data": map[string]any{"number": b.Block, "timestamp": time.Now().UnixMilli()}},
-		}
-	default:
-		return map[string]any{
-			"node": n.Name, "httpMethod": r.Method, "path": r.URL.Path, "query": r.URL.RawQuery, "body": body,
-		}
-	}
+	w.WriteHeader(status)
+	_, _ = w.Write(data)
 }
 
 func mustJSON(v any) []byte {

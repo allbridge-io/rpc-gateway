@@ -51,6 +51,18 @@ target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error
 | `evm` | `eth_blockNumber` | ignored; the target URL is used as-is (API keys often live there) | any EVM network; `chain_id` is verified by the testnet suite |
 | `solana` | `getSlot` | ignored | WebSocket goes to `ws_url` (defaults to `http_url` with ws scheme) |
 | `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
+| `sui` | _planned_ | | |
+| `soroban` | _planned_ | | |
+| `horizon` | _planned_ | | |
+| `ton` | _planned_ | | |
+| `algorand` | _planned_ | | |
+| `algorand_indexer` | _planned_ | | |
+| `stacks` | _planned_ | | |
+
+A chain type is one file in [internal/chaintype](internal/chaintype) that
+registers its name, its health check and whether the client's sub-path is
+passed through to the target. The configuration validates `type` against that
+registry, so the rest of the gateway never switches on the chain type.
 
 The EVM chains shipped in [config.example.toml](config.example.toml) and in the
 testnet config, with the testnet each key points at and its `chain_id`:
@@ -231,7 +243,8 @@ The offline suite uses a programmable fake RPC node
 ([internal/testutil/fakenode](internal/testutil/fakenode)) to simulate every
 failure a provider can produce: HTTP 5xx/429/403, dropped connections,
 hanging or slow responses, invalid JSON, JSON-RPC errors, lagging blocks,
-gzip bodies, Tron-style error bodies. Health rounds are driven synchronously
+gzip bodies, Tron-style error bodies. Each chain type is simulated by its own
+`sim_<type>.go` there. Health rounds are driven synchronously
 (`Manager.RunOnce`) so tests never sleep.
 
 The testnet suite ([tests/testnet](tests/testnet)) starts the real gateway on
@@ -241,7 +254,8 @@ every chain, and verifies per chain type that real calls work (each EVM chain's
 `eth_chainId` against the configured one, a Solana WebSocket subscription, the
 Tron `/wallet`, `/v1` and `/jsonrpc` APIs), that the dead target is detected and
 never used, and, in a second run, that a request landing on it is rerouted and
-the target tainted. Point it at your own providers with
+the target tainted. The per-type checks live in `tests/testnet/checks_<type>_test.go`;
+a configured chain whose type registers none fails the suite. Point it at your own providers with
 `TESTNET_CONFIG_TOML_PATH=... [SECRET_CONFIG_TOML_PATH=...] make test-testnet`;
 `TESTNET_CHAINS=SOL,TRX` filters chains.
 
@@ -325,9 +339,10 @@ the repo) so the dashboard stays version-controlled.
 
 ```
 cmd/rpcgateway        main: env, logger, config, gateway lifecycle
+internal/chaintype    registry of chain types: health check + path handling, one file each
 internal/config       TOML schema, loading, merging, ${ENV} expansion, validation
 internal/gateway      router (/{chain}, /status, /healthz), server lifecycle
-internal/proxy        per-chain failover proxy, health manager, JSON-RPC helpers
+internal/proxy        per-chain failover proxy, health manager
 internal/events       Observer interface, Logger, Multi, Recorder
 internal/testutil     fakenode: programmable fake RPC node for tests
 tests/testnet         real-network checks (build tag `testnet`)

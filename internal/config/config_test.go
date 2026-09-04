@@ -325,7 +325,7 @@ func TestLoad_Invalid(t *testing.T) {
 	}{
 		{"no chains", "[server]\nport = 1\n", "Chains"},
 		{"chain without targets", "[chains.SPL]\ntype = \"evm\"\n", "Targets"},
-		{"unknown chain type", strings.Replace(minimalTOML, `"evm"`, `"cosmos"`, 1), "oneof"},
+		{"unknown chain type", strings.Replace(minimalTOML, `"evm"`, `"cosmos"`, 1), "known chain types"},
 		{"missing type", strings.Replace(minimalTOML, "type = \"evm\"\n", "", 1), "Type"},
 		{"target without name", strings.Replace(minimalTOML, "name = \"One\"\n", "", 1), "Name"},
 		{"http_url with wrong scheme", strings.Replace(minimalTOML, "https://one.example", "ftp://one.example", 1), "http_url"},

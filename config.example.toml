@@ -156,3 +156,20 @@ message = "Solana: block height exceeded"
 name = "Public"
 http_url = "https://api.devnet.solana.com"
 ws_url = "wss://api.devnet.solana.com"
+
+# Chain types below are added one per anchor: a new chain's [chains.KEY]
+# block goes directly under the anchor of its type.
+
+# ---- sui ----
+
+# ---- soroban ----
+
+# ---- horizon ----
+
+# ---- ton ----
+
+# ---- algorand ----
+
+# ---- algorand_indexer ----
+
+# ---- stacks ----

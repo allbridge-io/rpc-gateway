@@ -1,4 +1,4 @@
-package proxy
+package chaintype
 
 import (
 	"bytes"
@@ -9,13 +9,14 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/0xProject/rpc-gateway/internal/config"
 )
 
 const (
+	// healthCheckUserAgent identifies the gateway's own calls in provider logs.
 	healthCheckUserAgent = "rpc-gateway-health-check"
-	maxRPCResponseBytes  = 1 << 20 // 1 MiB is plenty for a block number
+	// maxResponseBytes bounds a health check response: 1 MiB is plenty for a
+	// block number, and a provider streaming garbage cannot exhaust memory.
+	maxResponseBytes = 1 << 20
 )
 
 type rpcRequest struct {
@@ -47,6 +48,23 @@ func postJSON(ctx context.Context, client *http.Client, url string, headers map[
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	return do(client, req, headers)
+}
+
+// getJSON performs a GET with the target's extra headers and returns the
+// response body. A non-200 status is an error.
+func getJSON(ctx context.Context, client *http.Client, url string, headers map[string]string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	return do(client, req, headers)
+}
+
+// do sends the request with the health-check user agent and the target's
+// headers, and reads a size-limited body. Only HTTP 200 is a success.
+func do(client *http.Client, req *http.Request, headers map[string]string) ([]byte, error) {
 	req.Header.Set("User-Agent", healthCheckUserAgent)
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -58,7 +76,7 @@ func postJSON(ctx context.Context, client *http.Client, url string, headers map[
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRPCResponseBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -95,65 +113,12 @@ func callJSONRPC(ctx context.Context, client *http.Client, url string, headers m
 	return parsed.Result, nil
 }
 
-// tronNowBlock is the part of /wallet/getnowblock we care about.
-type tronNowBlock struct {
-	BlockHeader struct {
-		RawData struct {
-			Number uint64 `json:"number"`
-		} `json:"raw_data"`
-	} `json:"block_header"`
-	Error string `json:"Error"`
-}
-
 // JoinURLPath appends a sub-path to a base URL that may already have a path.
 func JoinURLPath(base, sub string) string {
 	if sub == "" || sub == "/" {
 		return base
 	}
 	return strings.TrimSuffix(base, "/") + "/" + strings.TrimPrefix(sub, "/")
-}
-
-// fetchHead returns the latest block number (EVM, Tron) or slot (Solana) of a target.
-func fetchHead(ctx context.Context, client *http.Client, t config.Target, typ config.ChainType) (uint64, error) {
-	url := t.HTTPURL
-	switch typ {
-	case config.ChainTypeTron:
-		body, err := postJSON(ctx, client, JoinURLPath(url, "/wallet/getnowblock"), t.Headers, []byte("{}"))
-		if err != nil {
-			return 0, err
-		}
-		var parsed tronNowBlock
-		if err := json.Unmarshal(body, &parsed); err != nil {
-			return 0, fmt.Errorf("getnowblock: invalid response: %w (%s)", err, truncate(string(body), 200))
-		}
-		if parsed.Error != "" {
-			return 0, fmt.Errorf("getnowblock: %s", parsed.Error)
-		}
-		if parsed.BlockHeader.RawData.Number == 0 {
-			return 0, fmt.Errorf("getnowblock: no block number in response (%s)", truncate(string(body), 200))
-		}
-		return parsed.BlockHeader.RawData.Number, nil
-	case config.ChainTypeSolana:
-		raw, err := callJSONRPC(ctx, client, url, t.Headers, "getSlot", nil)
-		if err != nil {
-			return 0, err
-		}
-		var slot uint64
-		if err := json.Unmarshal(raw, &slot); err != nil {
-			return 0, fmt.Errorf("getSlot: unexpected result %s", truncate(string(raw), 100))
-		}
-		return slot, nil
-	default:
-		raw, err := callJSONRPC(ctx, client, url, t.Headers, "eth_blockNumber", nil)
-		if err != nil {
-			return 0, err
-		}
-		var hex string
-		if err := json.Unmarshal(raw, &hex); err != nil {
-			return 0, fmt.Errorf("eth_blockNumber: unexpected result %s", truncate(string(raw), 100))
-		}
-		return parseHexUint64(hex)
-	}
 }
 
 // parseHexUint64 parses a JSON-RPC quantity, which must be 0x-prefixed hex.
@@ -172,6 +137,7 @@ func parseHexUint64(s string) (uint64, error) {
 	return v, nil
 }
 
+// truncate shortens a body quoted in an error message.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

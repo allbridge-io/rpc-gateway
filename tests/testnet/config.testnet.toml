@@ -120,3 +120,20 @@ match = "SERVER_BUSY"
 [[chains.TRX.targets]]
 name = "TronGrid"
 http_url = "https://api.shasta.trongrid.io"
+
+# Anchors for the chain types still to come: a new chain's [chains.KEY]
+# block goes directly under the anchor of its type.
+
+# ---- sui ----
+
+# ---- soroban ----
+
+# ---- horizon ----
+
+# ---- ton ----
+
+# ---- algorand ----
+
+# ---- algorand_indexer ----
+
+# ---- stacks ----

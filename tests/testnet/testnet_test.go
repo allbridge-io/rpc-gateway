@@ -7,6 +7,9 @@
 // Every chain from config.testnet.toml gets one extra, deliberately dead target
 // injected. The tests then prove for each chain type that real calls succeed
 // through the gateway and that the dead target never receives traffic.
+//
+// What "real calls succeed" means per chain type lives in checks_<type>_test.go,
+// which registers a typeChecks in its init(); see checks_test.go.
 package testnet
 
 import (
@@ -15,14 +18,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/coder/websocket"
 	"go.uber.org/zap"
 
 	"github.com/0xProject/rpc-gateway/internal/config"
@@ -226,16 +227,7 @@ func TestTestnet(t *testing.T) {
 		key := key
 		chain := e.cfg.Chains[key]
 		t.Run(key, func(t *testing.T) {
-			switch chain.Type {
-			case config.ChainTypeEVM:
-				testEVM(t, e, key, chain)
-			case config.ChainTypeSolana:
-				testSolana(t, e, key)
-			case config.ChainTypeTron:
-				testTron(t, e, key, chain)
-			default:
-				t.Fatalf("no testnet checks for chain type %q", chain.Type)
-			}
+			checksFor(t, chain.Type).Verify(t, e, key, chain)
 		})
 	}
 
@@ -245,164 +237,6 @@ func TestTestnet(t *testing.T) {
 		}
 		if ev := e.rec.Of(events.KindNoHealthy, ""); len(ev) != 0 {
 			t.Errorf("some chain had no healthy targets: %+v", ev)
-		}
-	})
-}
-
-func testEVM(t *testing.T, e *env, key string, chain config.Chain) {
-	path := "/" + key
-
-	t.Run("eth_chainId", func(t *testing.T) {
-		raw, resp := e.rpc(t, path, "eth_chainId")
-		var id string
-		_ = json.Unmarshal(raw, &id)
-		t.Logf("%s chainId=%s provider=%s", key, id, resp.Header.Get("X-Rpc-Provider"))
-		if chain.ChainID != "" && !strings.EqualFold(id, chain.ChainID) {
-			t.Errorf("chain id %s, config expects %s: wrong network behind %s", id, chain.ChainID, key)
-		}
-	})
-	t.Run("eth_blockNumber", func(t *testing.T) {
-		block := hexToUint(t, mustRaw(e.rpc(t, path, "eth_blockNumber")))
-		if block == 0 {
-			t.Fatal("block number is zero")
-		}
-		st := e.gw.Chain(key).Manager.Status()
-		var checked uint64
-		for _, s := range st {
-			if s.BlockNumber > checked {
-				checked = s.BlockNumber
-			}
-		}
-		if diff := absDiff(block, checked); diff > 200 {
-			t.Errorf("block via proxy %d differs from health-check block %d by %d", block, checked, diff)
-		}
-	})
-	t.Run("eth_getBalance", func(t *testing.T) {
-		raw, _ := e.rpc(t, path, "eth_getBalance", "0x0000000000000000000000000000000000000000", "latest")
-		var s string
-		if err := json.Unmarshal(raw, &s); err != nil {
-			t.Fatalf("expected hex string, got %s", raw)
-		}
-		if _, ok := new(big.Int).SetString(strings.TrimPrefix(s, "0x"), 16); !ok || !strings.HasPrefix(s, "0x") {
-			t.Fatalf("balance is not a 0x hex quantity: %s", s)
-		}
-	})
-	t.Run("eth_call revert is passed to the client", func(t *testing.T) {
-		// Calling a non-contract address returns "0x"; a JSON-RPC error from a
-		// real revert would also be passed through, not turned into a 503.
-		raw, _ := e.rpc(t, path, "eth_call", map[string]string{"to": "0x0000000000000000000000000000000000000001", "data": "0x00"}, "latest")
-		if !strings.HasPrefix(string(raw), `"0x`) {
-			t.Errorf("unexpected eth_call result %s", raw)
-		}
-	})
-	t.Run("repeated requests stay on healthy targets", func(t *testing.T) {
-		for i := 0; i < 5; i++ {
-			e.rpc(t, path, "eth_blockNumber")
-		}
-	})
-}
-
-func testSolana(t *testing.T, e *env, key string) {
-	path := "/" + key
-
-	t.Run("getHealth", func(t *testing.T) {
-		raw, resp := e.rpc(t, path, "getHealth")
-		t.Logf("%s getHealth=%s provider=%s", key, raw, resp.Header.Get("X-Rpc-Provider"))
-		if string(raw) != `"ok"` {
-			t.Errorf("getHealth = %s", raw)
-		}
-	})
-	t.Run("getSlot", func(t *testing.T) {
-		var slot uint64
-		if err := json.Unmarshal(mustRaw(e.rpc(t, path, "getSlot")), &slot); err != nil || slot == 0 {
-			t.Fatalf("getSlot: %v", err)
-		}
-	})
-	t.Run("getLatestBlockhash", func(t *testing.T) {
-		raw, _ := e.rpc(t, path, "getLatestBlockhash", map[string]string{"commitment": "finalized"})
-		if !strings.Contains(string(raw), `"blockhash"`) {
-			t.Errorf("no blockhash in %s", raw)
-		}
-	})
-	t.Run("websocket slotSubscribe", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), wsTimeout)
-		defer cancel()
-		wsURL := strings.Replace(e.base, "http://", "ws://", 1) + path
-		c, _, err := websocket.Dial(ctx, wsURL, nil)
-		if err != nil {
-			t.Fatalf("ws dial %s: %v", wsURL, err)
-		}
-		defer c.CloseNow()
-		c.SetReadLimit(1 << 20)
-		if err := c.Write(ctx, websocket.MessageText, []byte(`{"jsonrpc":"2.0","id":1,"method":"slotSubscribe"}`)); err != nil {
-			t.Fatalf("ws write: %v", err)
-		}
-		for {
-			_, data, err := c.Read(ctx)
-			if err != nil {
-				t.Fatalf("ws read (no slotNotification within %v): %v", wsTimeout, err)
-			}
-			if strings.Contains(string(data), `"slotNotification"`) {
-				t.Logf("received %s", truncate(data))
-				return
-			}
-			if strings.Contains(string(data), `"error"`) {
-				t.Fatalf("subscription error: %s", data)
-			}
-		}
-	})
-}
-
-func testTron(t *testing.T, e *env, key string, chain config.Chain) {
-	path := "/" + key
-
-	t.Run("wallet getnowblock", func(t *testing.T) {
-		resp, data := e.do(t, http.MethodPost, path+"/wallet/getnowblock", []byte("{}"))
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("HTTP %d %s", resp.StatusCode, truncate(data))
-		}
-		var b struct {
-			BlockHeader struct {
-				RawData struct {
-					Number uint64 `json:"number"`
-				} `json:"raw_data"`
-			} `json:"block_header"`
-		}
-		if err := json.Unmarshal(data, &b); err != nil || b.BlockHeader.RawData.Number == 0 {
-			t.Fatalf("no block number in %s", truncate(data))
-		}
-		t.Logf("%s block=%d provider=%s", key, b.BlockHeader.RawData.Number, resp.Header.Get("X-Rpc-Provider"))
-	})
-	t.Run("wallet getaccount via GET with query", func(t *testing.T) {
-		resp, data := e.do(t, http.MethodGet, path+"/wallet/getaccount?address=TJRabPrwbZy45sbavfcjinPJC18kjpRTv8&visible=true", nil)
-		if resp.StatusCode != http.StatusOK || !strings.Contains(string(data), `"address"`) {
-			t.Fatalf("HTTP %d %s", resp.StatusCode, truncate(data))
-		}
-	})
-	t.Run("client error passed through", func(t *testing.T) {
-		resp, data := e.do(t, http.MethodPost, path+"/wallet/getaccount", []byte(`{"address":"not-an-address","visible":true}`))
-		if resp.StatusCode != http.StatusOK || !strings.Contains(string(data), `"Error"`) {
-			t.Fatalf("expected Tron's 200 + Error body, got HTTP %d %s", resp.StatusCode, truncate(data))
-		}
-		if ev := e.rec.Of(events.KindRerouted, ""); len(ev) != 0 {
-			t.Errorf("client error must not cause a reroute: %+v", ev)
-		}
-	})
-	t.Run("jsonrpc eth_chainId", func(t *testing.T) {
-		raw, _ := e.rpc(t, path+"/jsonrpc", "eth_chainId")
-		var id string
-		_ = json.Unmarshal(raw, &id)
-		if chain.ChainID != "" && !strings.EqualFold(id, chain.ChainID) {
-			t.Errorf("chain id %s, config expects %s", id, chain.ChainID)
-		}
-	})
-	t.Run("v1 events (TronGrid only)", func(t *testing.T) {
-		resp, data := e.do(t, http.MethodGet, path+"/v1/blocks/latest/events?limit=1", nil)
-		if resp.StatusCode == http.StatusNotFound {
-			t.Skip("target is not TronGrid; /v1 API not available")
-		}
-		if resp.StatusCode != http.StatusOK || !strings.Contains(string(data), `"data"`) {
-			t.Fatalf("HTTP %d %s", resp.StatusCode, truncate(data))
 		}
 	})
 }
@@ -432,23 +266,8 @@ func TestTestnetReroute(t *testing.T) {
 		key := key
 		chain := cfg.Chains[key]
 		t.Run(key, func(t *testing.T) {
-			path := "/" + key
-			call := func() *http.Response {
-				switch chain.Type {
-				case config.ChainTypeTron:
-					resp, data := e.do(t, http.MethodPost, path+"/wallet/getnowblock", []byte("{}"))
-					if resp.StatusCode != http.StatusOK {
-						t.Fatalf("HTTP %d %s", resp.StatusCode, truncate(data))
-					}
-					return resp
-				case config.ChainTypeSolana:
-					_, resp := e.rpc(t, path, "getSlot")
-					return resp
-				default:
-					_, resp := e.rpc(t, path, "eth_blockNumber")
-					return resp
-				}
-			}
+			probe := checksFor(t, chain.Type).Probe
+			call := func() *http.Response { return probe(t, e, key) }
 
 			reroutesOfChain := func() []events.Event {
 				var out []events.Event

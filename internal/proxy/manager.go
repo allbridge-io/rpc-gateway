@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/0xProject/rpc-gateway/internal/chaintype"
 	"github.com/0xProject/rpc-gateway/internal/config"
 	"github.com/0xProject/rpc-gateway/internal/events"
 )
@@ -78,8 +80,12 @@ type checkResult struct {
 //   - it is not lagging behind the best target by more than MaxBlockLag
 //   - it is not tainted by a recent failed request
 type Manager struct {
-	chain    string
-	typ      config.ChainType
+	chain string
+	typ   config.ChainType
+	// spec is the chain type resolved once at construction; specOK is false for
+	// a type no build of the gateway knows, which config validation rejects.
+	spec     chaintype.Spec
+	specOK   bool
 	opts     HealthOptions
 	targets  []*targetState
 	client   *http.Client
@@ -105,9 +111,12 @@ func NewManager(chain string, typ config.ChainType, targets []config.Target, opt
 	if opts.SuccessThreshold == 0 {
 		opts.SuccessThreshold = 1
 	}
+	spec, specOK := chaintype.Lookup(string(typ))
 	m := &Manager{
 		chain:    chain,
 		typ:      typ,
+		spec:     spec,
+		specOK:   specOK,
 		opts:     opts,
 		client:   opts.Client,
 		observer: observer,
@@ -163,7 +172,7 @@ func (m *Manager) RunOnce(ctx context.Context) {
 			defer wg.Done()
 			cctx, cancel := context.WithTimeout(ctx, m.opts.Timeout)
 			defer cancel()
-			block, err := fetchHead(cctx, m.client, t.cfg, m.typ)
+			block, err := m.head(cctx, t.cfg)
 			results[i] = checkResult{block: block, err: err}
 		}(i, t)
 	}
@@ -186,6 +195,16 @@ func (m *Manager) RunOnce(ctx context.Context) {
 		}
 		m.updateLag(t, results[i], best)
 	}
+}
+
+// head performs one health check call for a target through the chain type's
+// registered check. An unknown type fails the check instead of panicking: the
+// gateway keeps serving its other chains and /status shows why.
+func (m *Manager) head(ctx context.Context, t config.Target) (uint64, error) {
+	if !m.specOK {
+		return 0, fmt.Errorf("unknown chain type %q; known types: %s", m.typ, strings.Join(chaintype.Names(), ", "))
+	}
+	return m.spec.Head(ctx, m.client, t.HTTPURL, t.Headers)
 }
 
 func (m *Manager) recordCheck(t *targetState, r checkResult, now time.Time) {
