@@ -157,3 +157,10 @@ name = "Toncenter"
 http_url = "https://testnet.toncenter.com"
 
 # ---- stacks ----
+
+[chains.STX]                # Stacks testnet (Hiro API)
+type = "stacks"
+max_block_lag = 5
+[[chains.STX.targets]]
+name = "Hiro"
+http_url = "https://api.testnet.hiro.so"
