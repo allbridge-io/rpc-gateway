@@ -14,7 +14,7 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/testutil/fakenode"
 )
 
-const chainTypeSoroban = fakenode.ChainTypeSoroban
+const chainTypeSoroban = config.ChainTypeSoroban
 
 // getHealthBody is what a Soroban client sends: no "params" member at all.
 const getHealthBody = `{"jsonrpc":"2.0","id":9,"method":"getHealth"}`

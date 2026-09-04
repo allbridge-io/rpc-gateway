@@ -25,7 +25,7 @@ type tonFixture struct {
 
 func newTonFixture(t *testing.T) *tonFixture {
 	t.Helper()
-	node := fakenode.New(t, "Toncenter", fakenode.TypeTON)
+	node := fakenode.New(t, "Toncenter", config.ChainTypeTON)
 	node.Set(fakenode.Behavior{Block: 82614017})
 
 	toml := fmt.Sprintf(`

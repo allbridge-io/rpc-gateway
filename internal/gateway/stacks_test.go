@@ -29,7 +29,7 @@ type stacksFixture struct {
 // single-endpoint one in the same gateway.
 func newStacksFixture(t *testing.T) *stacksFixture {
 	t.Helper()
-	stx := fakenode.New(t, "Hiro", fakenode.ChainTypeStacks)
+	stx := fakenode.New(t, "Hiro", config.ChainTypeStacks)
 	spl := fakenode.New(t, "Spl", config.ChainTypeEVM)
 	stx.Set(fakenode.Behavior{Block: 256844})
 	spl.Set(fakenode.Behavior{Block: 100})
@@ -146,7 +146,7 @@ func TestGateway_StacksStatusReportsTipHeight(t *testing.T) {
 		t.Fatalf("invalid status JSON: %v\n%s", err, body)
 	}
 	stx := st.Chains["STX"]
-	if stx.Type != fakenode.ChainTypeStacks || stx.RoutableTargets != 1 {
+	if stx.Type != config.ChainTypeStacks || stx.RoutableTargets != 1 {
 		t.Fatalf("STX status: %+v", stx)
 	}
 	if !stx.Targets[0].Routable || stx.Targets[0].BlockNumber != 256844 {

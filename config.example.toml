@@ -198,7 +198,6 @@ http_url = "https://testnet.toncenter.com"   # base URL, the client's path is ap
 # headers = { "X-API-Key" = "${TONCENTER_KEY}" }  # toncenter allows ~1 request/second without a key
 
 # ---- stacks ----
-
 [chains.STX]                # Stacks testnet through the Hiro API (it also serves the node's /v2/*)
 type = "stacks"
 max_block_lag = 5           # Stacks blocks are seconds apart since Nakamoto

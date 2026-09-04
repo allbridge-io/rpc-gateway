@@ -13,11 +13,10 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/events"
 )
 
-// chainTypeSui is the config value of the Sui chain type.
-const chainTypeSui = config.ChainType("sui")
+// config.ChainTypeSui is the config value of the Sui chain type.
 
 func init() {
-	registerChecks(chainTypeSui, typeChecks{
+	registerChecks(config.ChainTypeSui, typeChecks{
 		Verify: func(t *testing.T, e *env, key string, _ config.Chain) { testSui(t, e, key) },
 		Probe: func(t *testing.T, e *env, key string) *http.Response {
 			_, resp := e.rpc(t, "/"+key, "sui_getLatestCheckpointSequenceNumber")

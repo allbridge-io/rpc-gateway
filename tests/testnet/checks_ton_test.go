@@ -12,11 +12,10 @@ import (
 
 	"github.com/0xProject/rpc-gateway/internal/config"
 	"github.com/0xProject/rpc-gateway/internal/events"
-	"github.com/0xProject/rpc-gateway/internal/testutil/fakenode"
 )
 
 func init() {
-	registerChecks(fakenode.TypeTON, typeChecks{
+	registerChecks(config.ChainTypeTON, typeChecks{
 		Verify: testTON,
 		Probe: func(t *testing.T, e *env, key string) *http.Response {
 			tonPace(e, key)

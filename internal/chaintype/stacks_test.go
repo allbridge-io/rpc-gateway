@@ -12,7 +12,7 @@ import (
 )
 
 func TestStacks_RegisteredAsPassThrough(t *testing.T) {
-	spec, ok := chaintype.Lookup(string(fakenode.ChainTypeStacks))
+	spec, ok := chaintype.Lookup(string(config.ChainTypeStacks))
 	if !ok {
 		t.Fatalf("stacks is not registered: %v", chaintype.Names())
 	}
@@ -22,16 +22,16 @@ func TestStacks_RegisteredAsPassThrough(t *testing.T) {
 	if spec.Doc == "" || spec.Head == nil {
 		t.Errorf("incomplete spec %+v", spec)
 	}
-	if !fakenode.ChainTypeStacks.PassThroughPath() {
+	if !config.ChainTypeStacks.PassThroughPath() {
 		t.Error("config must see stacks as a pass-through type")
 	}
 }
 
 func TestStacks_HeadReadsStacksTipHeight(t *testing.T) {
-	n := fakenode.New(t, "Hiro", fakenode.ChainTypeStacks)
+	n := fakenode.New(t, "Hiro", config.ChainTypeStacks)
 	n.Set(fakenode.Behavior{Block: 256844})
 
-	block, err := head(t, fakenode.ChainTypeStacks, n, map[string]string{"X-API-Key": "k"})
+	block, err := head(t, config.ChainTypeStacks, n, map[string]string{"X-API-Key": "k"})
 	if err != nil || block != 256844 {
 		t.Fatalf("head = %d, %v", block, err)
 	}
@@ -47,9 +47,9 @@ func TestStacks_HeadReadsStacksTipHeight(t *testing.T) {
 // A base path in http_url (a provider prefix or an API key path) must survive
 // the health check.
 func TestStacks_HeadKeepsTheTargetBasePath(t *testing.T) {
-	n := fakenode.New(t, "Hiro", fakenode.ChainTypeStacks)
+	n := fakenode.New(t, "Hiro", config.ChainTypeStacks)
 	n.Set(fakenode.Behavior{Block: 7})
-	spec, _ := chaintype.Lookup(string(fakenode.ChainTypeStacks))
+	spec, _ := chaintype.Lookup(string(config.ChainTypeStacks))
 
 	block, err := spec.Head(context.Background(), http.DefaultClient, n.URL()+"/stacks", nil)
 	if err != nil || block != 7 {
@@ -79,10 +79,10 @@ func TestStacks_HeadFailureKinds(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := fakenode.New(t, "Hiro", fakenode.ChainTypeStacks)
+			n := fakenode.New(t, "Hiro", config.ChainTypeStacks)
 			n.Set(tt.b)
 
-			block, err := head(t, fakenode.ChainTypeStacks, n, nil)
+			block, err := head(t, config.ChainTypeStacks, n, nil)
 			if err == nil {
 				t.Fatalf("expected an error, got block %d", block)
 			}
@@ -97,10 +97,10 @@ func TestStacks_HeadFailureKinds(t *testing.T) {
 // missing field is. The block-lag check is what excludes a target that far
 // behind the others.
 func TestStacks_HeadAcceptsHeightZero(t *testing.T) {
-	n := fakenode.New(t, "Fresh", fakenode.ChainTypeStacks)
+	n := fakenode.New(t, "Fresh", config.ChainTypeStacks)
 	n.Set(fakenode.Behavior{Block: 0})
 
-	block, err := head(t, fakenode.ChainTypeStacks, n, nil)
+	block, err := head(t, config.ChainTypeStacks, n, nil)
 	if err != nil || block != 0 {
 		t.Fatalf("head = %d, %v", block, err)
 	}
@@ -120,7 +120,7 @@ func TestStacks_ExampleConfigHasSTX(t *testing.T) {
 	if !ok {
 		t.Fatalf("example config lacks chain STX: %v", cfg.ChainKeys())
 	}
-	if chain.Type != fakenode.ChainTypeStacks {
+	if chain.Type != config.ChainTypeStacks {
 		t.Errorf("STX type = %q, want stacks", chain.Type)
 	}
 	if len(chain.Targets) == 0 {

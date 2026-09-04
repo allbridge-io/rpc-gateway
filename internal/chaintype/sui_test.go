@@ -11,11 +11,10 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/testutil/fakenode"
 )
 
-// chainTypeSui is the config value of the Sui chain type.
-const chainTypeSui = config.ChainType("sui")
+// config.ChainTypeSui is the config value of the Sui chain type.
 
 func TestSui_Registered(t *testing.T) {
-	spec, ok := chaintype.Lookup(string(chainTypeSui))
+	spec, ok := chaintype.Lookup(string(config.ChainTypeSui))
 	if !ok {
 		t.Fatalf("sui is not registered: %v", chaintype.Names())
 	}
@@ -25,16 +24,16 @@ func TestSui_Registered(t *testing.T) {
 	if spec.Head == nil || spec.Doc == "" {
 		t.Errorf("incomplete spec %+v", spec)
 	}
-	if chainTypeSui.PassThroughPath() {
+	if config.ChainTypeSui.PassThroughPath() {
 		t.Error("config.ChainType(\"sui\").PassThroughPath() must be false")
 	}
 }
 
 func TestSui_Head(t *testing.T) {
-	n := fakenode.New(t, "Sui", chainTypeSui)
+	n := fakenode.New(t, "Sui", config.ChainTypeSui)
 	n.Set(fakenode.Behavior{Block: 379726054})
 
-	block, err := head(t, chainTypeSui, n, map[string]string{"X-Api-Key": "k"})
+	block, err := head(t, config.ChainTypeSui, n, map[string]string{"X-Api-Key": "k"})
 	if err != nil || block != 379726054 {
 		t.Fatalf("head = %d, %v", block, err)
 	}
@@ -57,10 +56,10 @@ func TestSui_Head(t *testing.T) {
 // what a float64 would represent exactly, so the string form must be parsed
 // rather than run through a JSON number.
 func TestSui_HeadParsesLargeDecimalStrings(t *testing.T) {
-	n := fakenode.New(t, "Sui", chainTypeSui)
+	n := fakenode.New(t, "Sui", config.ChainTypeSui)
 	n.Set(fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":"9007199254740993"}`})
 
-	block, err := head(t, chainTypeSui, n, nil)
+	block, err := head(t, config.ChainTypeSui, n, nil)
 	if err != nil || block != 9007199254740993 {
 		t.Fatalf("head = %d, %v; want 9007199254740993", block, err)
 	}
@@ -70,10 +69,10 @@ func TestSui_HeadParsesLargeDecimalStrings(t *testing.T) {
 // is still understood: the number is the same, and failing the check would take
 // a working target out of rotation for a formatting detail.
 func TestSui_HeadAcceptsABareNumber(t *testing.T) {
-	n := fakenode.New(t, "Sui", chainTypeSui)
+	n := fakenode.New(t, "Sui", config.ChainTypeSui)
 	n.Set(fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":42}`})
 
-	block, err := head(t, chainTypeSui, n, nil)
+	block, err := head(t, config.ChainTypeSui, n, nil)
 	if err != nil || block != 42 {
 		t.Fatalf("head = %d, %v; want 42", block, err)
 	}
@@ -98,10 +97,10 @@ func TestSui_HeadFailureKinds(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := fakenode.New(t, "Sui", chainTypeSui)
+			n := fakenode.New(t, "Sui", config.ChainTypeSui)
 			n.Set(tt.b)
 
-			block, err := head(t, chainTypeSui, n, nil)
+			block, err := head(t, config.ChainTypeSui, n, nil)
 			if err == nil {
 				t.Fatalf("expected an error, got block %d", block)
 			}
@@ -113,9 +112,9 @@ func TestSui_HeadFailureKinds(t *testing.T) {
 }
 
 func TestSui_HeadHonoursTheContext(t *testing.T) {
-	n := fakenode.New(t, "Sui", chainTypeSui)
+	n := fakenode.New(t, "Sui", config.ChainTypeSui)
 	n.Set(fakenode.Behavior{Hang: true})
-	spec, _ := chaintype.Lookup(string(chainTypeSui))
+	spec, _ := chaintype.Lookup(string(config.ChainTypeSui))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -138,7 +137,7 @@ func TestSui_ExampleConfigHasTheChain(t *testing.T) {
 	if !ok {
 		t.Fatalf("example config lacks chain SUI: %v", cfg.ChainKeys())
 	}
-	if chain.Type != chainTypeSui {
+	if chain.Type != config.ChainTypeSui {
 		t.Errorf("SUI type = %q, want sui", chain.Type)
 	}
 	if len(chain.Targets) == 0 {

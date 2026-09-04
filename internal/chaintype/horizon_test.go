@@ -28,10 +28,10 @@ func TestRegistry_Horizon(t *testing.T) {
 }
 
 func TestHead_Horizon(t *testing.T) {
-	n := fakenode.New(t, "H", fakenode.ChainTypeHorizon)
+	n := fakenode.New(t, "H", config.ChainTypeHorizon)
 	n.Set(fakenode.Behavior{Block: 4501678})
 
-	block, err := head(t, fakenode.ChainTypeHorizon, n, map[string]string{"X-Api-Key": "k"})
+	block, err := head(t, config.ChainTypeHorizon, n, map[string]string{"X-Api-Key": "k"})
 	if err != nil || block != 4501678 {
 		t.Fatalf("head = %d, %v", block, err)
 	}
@@ -68,10 +68,10 @@ func TestHead_HorizonFailureKinds(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := fakenode.New(t, "H", fakenode.ChainTypeHorizon)
+			n := fakenode.New(t, "H", config.ChainTypeHorizon)
 			n.Set(tt.b)
 
-			block, err := head(t, fakenode.ChainTypeHorizon, n, nil)
+			block, err := head(t, config.ChainTypeHorizon, n, nil)
 			if err == nil {
 				t.Fatalf("expected an error, got ledger %d", block)
 			}
@@ -84,7 +84,7 @@ func TestHead_HorizonFailureKinds(t *testing.T) {
 
 // A base path in http_url (a provider prefix) must survive the health check.
 func TestHead_HorizonKeepsTheTargetBasePath(t *testing.T) {
-	n := fakenode.New(t, "H", fakenode.ChainTypeHorizon)
+	n := fakenode.New(t, "H", config.ChainTypeHorizon)
 	n.Set(fakenode.Behavior{Block: 7})
 	spec, _ := chaintype.Lookup(chaintype.Horizon)
 

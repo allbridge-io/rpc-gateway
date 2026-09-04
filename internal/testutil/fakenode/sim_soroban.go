@@ -9,14 +9,13 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/config"
 )
 
-// ChainTypeSoroban is the config value of the Stellar Soroban RPC chain type.
+// config.ChainTypeSoroban is the config value of the Stellar Soroban RPC chain type.
 // internal/config only keeps constants for the types its own tests name, and
 // the chain type registry is the source of truth, so the simulation declares
 // the one it answers for.
-const ChainTypeSoroban config.ChainType = "soroban"
 
 func init() {
-	RegisterSim(ChainTypeSoroban, sorobanSim)
+	RegisterSim(config.ChainTypeSoroban, sorobanSim)
 }
 
 // sorobanLedgerRetentionWindow is what soroban-rpc reports on testnet (7 days

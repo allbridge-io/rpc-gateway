@@ -8,17 +8,15 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/config"
 )
 
-// ChainTypeStacks is the chains.X.type value of the Stacks chain type.
+// config.ChainTypeStacks is the chains.X.type value of the Stacks chain type.
 // internal/config only keeps constants for the types it names itself, so the
-// Stacks tests take the value from here.
-const ChainTypeStacks config.ChainType = "stacks"
 
 // stacksTestnetNetworkID is what a Stacks testnet node reports in /v2/info
 // (0x80000000); mainnet reports 1.
 const stacksTestnetNetworkID = 2147483648
 
 func init() {
-	RegisterSim(ChainTypeStacks, stacksSim)
+	RegisterSim(config.ChainTypeStacks, stacksSim)
 }
 
 // stacksSim mimics the Hiro Stacks API, which serves both the node's /v2/*

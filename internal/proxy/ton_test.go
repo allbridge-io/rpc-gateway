@@ -21,10 +21,10 @@ func newTonProxy(t *testing.T, targets []config.Target, taint time.Duration) *te
 	opts := defaultOpts()
 	opts.TaintDuration = taint
 	opts.Now = clock.Now
-	m := NewManager("TON", fakenode.TypeTON, targets, opts, rec)
+	m := NewManager("TON", config.ChainTypeTON, targets, opts, rec)
 	px, err := New(Options{
 		Chain:           "TON",
-		Type:            fakenode.TypeTON,
+		Type:            config.ChainTypeTON,
 		Targets:         targets,
 		UpstreamTimeout: 2 * time.Second,
 		Observer:        rec,
@@ -63,11 +63,11 @@ func decodeTonEcho(t *testing.T, rr *httptest.ResponseRecorder) tonEcho {
 }
 
 func TestTON_HealthCheckUsesMasterchainInfo(t *testing.T) {
-	n := fakenode.New(t, "Toncenter", fakenode.TypeTON)
+	n := fakenode.New(t, "Toncenter", config.ChainTypeTON)
 	n.Set(fakenode.Behavior{Block: 82614017})
 	target := n.Target()
 	target.Headers = map[string]string{"X-API-Key": "secret-key"}
-	m := NewManager("TON", fakenode.TypeTON, []config.Target{target}, defaultOpts(), nil)
+	m := NewManager("TON", config.ChainTypeTON, []config.Target{target}, defaultOpts(), nil)
 
 	m.RunOnce(context.Background())
 
@@ -98,9 +98,9 @@ func TestTON_HealthCheckFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := fakenode.New(t, "Toncenter", fakenode.TypeTON)
+			n := fakenode.New(t, "Toncenter", config.ChainTypeTON)
 			n.Set(tt.b)
-			m := NewManager("TON", fakenode.TypeTON, targetsOf(n), defaultOpts(), nil)
+			m := NewManager("TON", config.ChainTypeTON, targetsOf(n), defaultOpts(), nil)
 			m.RunOnce(context.Background())
 			st := m.Status()[0]
 			if st.Routable || !containsAny(st.LastError, tt.wantErr) {
@@ -111,13 +111,13 @@ func TestTON_HealthCheckFailures(t *testing.T) {
 }
 
 func TestTON_BlockLagBetweenNodes(t *testing.T) {
-	a := fakenode.New(t, "A", fakenode.TypeTON)
-	b := fakenode.New(t, "B", fakenode.TypeTON)
+	a := fakenode.New(t, "A", config.ChainTypeTON)
+	b := fakenode.New(t, "B", config.ChainTypeTON)
 	a.Set(fakenode.Behavior{Block: 82614017})
 	b.Set(fakenode.Behavior{Block: 82614007})
 	opts := defaultOpts()
 	opts.MaxBlockLag = 5
-	m := NewManager("TON", fakenode.TypeTON, targetsOf(a, b), opts, nil)
+	m := NewManager("TON", config.ChainTypeTON, targetsOf(a, b), opts, nil)
 
 	m.RunOnce(context.Background())
 
@@ -127,7 +127,7 @@ func TestTON_BlockLagBetweenNodes(t *testing.T) {
 }
 
 func TestTON_PassesPathQueryMethodAndBody(t *testing.T) {
-	n := fakenode.New(t, "Toncenter", fakenode.TypeTON)
+	n := fakenode.New(t, "Toncenter", config.ChainTypeTON)
 	p := newTonProxy(t, targetsOf(n), 0)
 
 	rr := tonRequest(p, http.MethodGet, "/api/v3/blocks?limit=1&sort=desc", "")
@@ -155,7 +155,7 @@ func TestTON_PassesPathQueryMethodAndBody(t *testing.T) {
 }
 
 func TestTON_TargetBasePathAndQueryAreKept(t *testing.T) {
-	n := fakenode.New(t, "Toncenter", fakenode.TypeTON)
+	n := fakenode.New(t, "Toncenter", config.ChainTypeTON)
 	target := n.Target()
 	target.HTTPURL = n.URL() + "/base/?api_key=k1"
 	p := newTonProxy(t, []config.Target{target}, 0)
@@ -168,7 +168,7 @@ func TestTON_TargetBasePathAndQueryAreKept(t *testing.T) {
 }
 
 func TestTON_HeadersInjectedAndOverrideClient(t *testing.T) {
-	n := fakenode.New(t, "Toncenter", fakenode.TypeTON)
+	n := fakenode.New(t, "Toncenter", config.ChainTypeTON)
 	target := n.Target()
 	target.Headers = map[string]string{"X-API-Key": "server-key", "X-Extra": "1"}
 	p := newTonProxy(t, []config.Target{target}, 0)
@@ -187,7 +187,7 @@ func TestTON_HeadersInjectedAndOverrideClient(t *testing.T) {
 // The backend also talks to toncenter's JSON-RPC endpoint; it must reach the
 // target through the same chain prefix as the v3 REST API.
 func TestTON_JSONRPCThroughSamePrefix(t *testing.T) {
-	n := fakenode.New(t, "Toncenter", fakenode.TypeTON)
+	n := fakenode.New(t, "Toncenter", config.ChainTypeTON)
 	n.Set(fakenode.Behavior{Block: 82614017})
 	p := newTonProxy(t, targetsOf(n), 0)
 
@@ -215,9 +215,9 @@ func TestTON_ClientSideErrorsPassThrough(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bad := fakenode.New(t, "Bad", fakenode.TypeTON)
+			bad := fakenode.New(t, "Bad", config.ChainTypeTON)
 			bad.Set(tt.b)
-			good := fakenode.New(t, "Good", fakenode.TypeTON)
+			good := fakenode.New(t, "Good", config.ChainTypeTON)
 			p := newTonProxy(t, targetsOf(bad, good), time.Second)
 
 			sawBad := false
@@ -256,9 +256,9 @@ func TestTON_NodeSideFailuresFailOver(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bad := fakenode.New(t, "Bad", fakenode.TypeTON)
+			bad := fakenode.New(t, "Bad", config.ChainTypeTON)
 			bad.Set(tt.b)
-			good := fakenode.New(t, "Good", fakenode.TypeTON)
+			good := fakenode.New(t, "Good", config.ChainTypeTON)
 			p := newTonProxy(t, targetsOf(bad, good), 10*time.Second)
 
 			for i := 0; i < 20 && bad.CallCount("") == 0; i++ {
@@ -287,9 +287,9 @@ func TestTON_NodeSideFailuresFailOver(t *testing.T) {
 
 // A POST body must survive the reroute, or a message broadcast would be lost.
 func TestTON_PostBodyReplayedOnFailover(t *testing.T) {
-	bad := fakenode.New(t, "Bad", fakenode.TypeTON)
+	bad := fakenode.New(t, "Bad", config.ChainTypeTON)
 	bad.Set(fakenode.Behavior{HTTPStatus: 429, RawBody: `{"error":"Rate limit exceeded"}`})
-	good := fakenode.New(t, "Good", fakenode.TypeTON)
+	good := fakenode.New(t, "Good", config.ChainTypeTON)
 	p := newTonProxy(t, targetsOf(bad, good), 0)
 
 	const body = `{"boc":"te6cckEBAQEAAgAAAEysuc0="}`
@@ -310,14 +310,14 @@ func TestTON_PostBodyReplayedOnFailover(t *testing.T) {
 }
 
 func TestTON_UpstreamTimeoutFailsOver(t *testing.T) {
-	slow := fakenode.New(t, "Slow", fakenode.TypeTON)
+	slow := fakenode.New(t, "Slow", config.ChainTypeTON)
 	slow.Set(fakenode.Behavior{Hang: true})
-	good := fakenode.New(t, "Good", fakenode.TypeTON)
+	good := fakenode.New(t, "Good", config.ChainTypeTON)
 	rec := &events.Recorder{}
 	targets := targetsOf(slow, good)
-	m := NewManager("TON", fakenode.TypeTON, targets, defaultOpts(), rec)
+	m := NewManager("TON", config.ChainTypeTON, targets, defaultOpts(), rec)
 	px, err := New(Options{
-		Chain: "TON", Type: fakenode.TypeTON, Targets: targets,
+		Chain: "TON", Type: config.ChainTypeTON, Targets: targets,
 		UpstreamTimeout: 100 * time.Millisecond, Observer: rec,
 	}, m)
 	if err != nil {

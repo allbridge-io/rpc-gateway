@@ -11,7 +11,7 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/testutil/fakenode"
 )
 
-const chainTypeSoroban = fakenode.ChainTypeSoroban
+const chainTypeSoroban = config.ChainTypeSoroban
 
 func TestRegistry_SorobanIsASingleEndpointType(t *testing.T) {
 	spec, ok := chaintype.Lookup(string(chainTypeSoroban))

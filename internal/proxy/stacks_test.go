@@ -25,10 +25,10 @@ func newStacksProxy(t *testing.T, targets []config.Target, exceptions []config.E
 	opts := defaultOpts()
 	opts.TaintDuration = taint
 	opts.Now = clock.Now
-	m := NewManager("STX", fakenode.ChainTypeStacks, targets, opts, rec)
+	m := NewManager("STX", config.ChainTypeStacks, targets, opts, rec)
 	px, err := New(Options{
 		Chain:           "STX",
-		Type:            fakenode.ChainTypeStacks,
+		Type:            config.ChainTypeStacks,
 		Targets:         targets,
 		Exceptions:      exceptions,
 		UpstreamTimeout: 2 * time.Second,
@@ -70,11 +70,11 @@ func decodeStacksEcho(t *testing.T, rr *httptest.ResponseRecorder) stacksEcho {
 }
 
 func TestStacks_HealthCheckUsesV2Info(t *testing.T) {
-	n := fakenode.New(t, "Hiro", fakenode.ChainTypeStacks)
+	n := fakenode.New(t, "Hiro", config.ChainTypeStacks)
 	n.Set(fakenode.Behavior{Block: 256844})
 	target := n.Target()
 	target.Headers = map[string]string{"x-api-key": "secret-key"}
-	m := NewManager("STX", fakenode.ChainTypeStacks, []config.Target{target}, defaultOpts(), nil)
+	m := NewManager("STX", config.ChainTypeStacks, []config.Target{target}, defaultOpts(), nil)
 
 	m.RunOnce(context.Background())
 
@@ -104,9 +104,9 @@ func TestStacks_HealthCheckFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := fakenode.New(t, "Hiro", fakenode.ChainTypeStacks)
+			n := fakenode.New(t, "Hiro", config.ChainTypeStacks)
 			n.Set(tt.b)
-			m := NewManager("STX", fakenode.ChainTypeStacks, targetsOf(n), defaultOpts(), nil)
+			m := NewManager("STX", config.ChainTypeStacks, targetsOf(n), defaultOpts(), nil)
 			m.RunOnce(context.Background())
 			st := m.Status()[0]
 			if st.Routable || !containsAny(st.LastError, tt.wantErr) {
@@ -117,13 +117,13 @@ func TestStacks_HealthCheckFailures(t *testing.T) {
 }
 
 func TestStacks_BlockLagBetweenNodes(t *testing.T) {
-	a := fakenode.New(t, "A", fakenode.ChainTypeStacks)
-	b := fakenode.New(t, "B", fakenode.ChainTypeStacks)
+	a := fakenode.New(t, "A", config.ChainTypeStacks)
+	b := fakenode.New(t, "B", config.ChainTypeStacks)
 	a.Set(fakenode.Behavior{Block: 256844})
 	b.Set(fakenode.Behavior{Block: 256834})
 	opts := defaultOpts()
 	opts.MaxBlockLag = 5
-	m := NewManager("STX", fakenode.ChainTypeStacks, targetsOf(a, b), opts, nil)
+	m := NewManager("STX", config.ChainTypeStacks, targetsOf(a, b), opts, nil)
 
 	m.RunOnce(context.Background())
 
@@ -133,7 +133,7 @@ func TestStacks_BlockLagBetweenNodes(t *testing.T) {
 }
 
 func TestStacks_PassesPathQueryMethodAndBody(t *testing.T) {
-	n := fakenode.New(t, "Hiro", fakenode.ChainTypeStacks)
+	n := fakenode.New(t, "Hiro", config.ChainTypeStacks)
 	p := newStacksProxy(t, targetsOf(n), nil, 0)
 
 	rr := stacksRequest(p, http.MethodGet, "/extended/v1/block?limit=1&offset=0", "")
@@ -162,7 +162,7 @@ func TestStacks_PassesPathQueryMethodAndBody(t *testing.T) {
 }
 
 func TestStacks_TargetBasePathAndQueryAreKept(t *testing.T) {
-	n := fakenode.New(t, "Hiro", fakenode.ChainTypeStacks)
+	n := fakenode.New(t, "Hiro", config.ChainTypeStacks)
 	target := n.Target()
 	target.HTTPURL = n.URL() + "/stacks/?apikey=k1"
 	p := newStacksProxy(t, []config.Target{target}, nil, 0)
@@ -175,7 +175,7 @@ func TestStacks_TargetBasePathAndQueryAreKept(t *testing.T) {
 }
 
 func TestStacks_HeadersInjectedAndOverrideClient(t *testing.T) {
-	n := fakenode.New(t, "Hiro", fakenode.ChainTypeStacks)
+	n := fakenode.New(t, "Hiro", config.ChainTypeStacks)
 	target := n.Target()
 	target.Headers = map[string]string{"x-api-key": "server-key", "X-Extra": "1"}
 	p := newStacksProxy(t, []config.Target{target}, nil, 0)
@@ -205,9 +205,9 @@ func TestStacks_ClientErrorsPassThrough(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bad := fakenode.New(t, "Bad", fakenode.ChainTypeStacks)
+			bad := fakenode.New(t, "Bad", config.ChainTypeStacks)
 			bad.Set(tt.b)
-			good := fakenode.New(t, "Good", fakenode.ChainTypeStacks)
+			good := fakenode.New(t, "Good", config.ChainTypeStacks)
 			p := newStacksProxy(t, targetsOf(bad, good), nil, time.Second)
 
 			sawBad := false
@@ -243,9 +243,9 @@ func TestStacks_NodeSideFailuresFailOver(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bad := fakenode.New(t, "Bad", fakenode.ChainTypeStacks)
+			bad := fakenode.New(t, "Bad", config.ChainTypeStacks)
 			bad.Set(tt.b)
-			good := fakenode.New(t, "Good", fakenode.ChainTypeStacks)
+			good := fakenode.New(t, "Good", config.ChainTypeStacks)
 			p := newStacksProxy(t, targetsOf(bad, good), nil, 10*time.Second)
 
 			for i := 0; i < 20 && bad.CallCount("") == 0; i++ {

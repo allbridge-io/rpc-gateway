@@ -12,15 +12,14 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/testutil/fakenode"
 )
 
-// chainTypeSui is the config value of the Sui chain type.
-const chainTypeSui = config.ChainType("sui")
+// config.ChainTypeSui is the config value of the Sui chain type.
 
 const suiRPCBody = `{"jsonrpc":"2.0","id":1,"method":"suix_getAllBalances","params":["0x2"]}`
 
 // newSuiFixture adds a SUI chain to the shared fixture and returns its node.
 func newSuiFixture(t *testing.T) (*fixture, *fakenode.Node) {
 	t.Helper()
-	n := fakenode.New(t, "Sui", chainTypeSui)
+	n := fakenode.New(t, "Sui", config.ChainTypeSui)
 	n.Set(fakenode.Behavior{Block: 379726054})
 	f := newFixture(t, fmt.Sprintf(`
 [chains.SUI]
@@ -101,7 +100,7 @@ func TestGatewaySui_StatusReportsTheCheckpoint(t *testing.T) {
 	if !ok {
 		t.Fatalf("SUI missing from status: %s", body)
 	}
-	if sui.Type != chainTypeSui || sui.RoutableTargets != 1 || len(sui.Targets) != 1 {
+	if sui.Type != config.ChainTypeSui || sui.RoutableTargets != 1 || len(sui.Targets) != 1 {
 		t.Fatalf("SUI status: %+v", sui)
 	}
 	if sui.Targets[0].BlockNumber != 379726054 {

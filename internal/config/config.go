@@ -31,6 +31,16 @@ const (
 	// ChainTypeTron proxies the Tron HTTP API (/wallet/*, /walletsolidity/*,
 	// /v1/*, /jsonrpc): the client's path and query are appended to the target URL.
 	ChainTypeTron ChainType = "tron"
+	// ChainTypeSui is a single-endpoint JSON-RPC chain (Sui fullnode).
+	ChainTypeSui ChainType = "sui"
+	// ChainTypeSoroban is a single-endpoint JSON-RPC chain (Stellar Soroban RPC).
+	ChainTypeSoroban ChainType = "soroban"
+	// ChainTypeHorizon proxies the Stellar Horizon REST API (path pass-through).
+	ChainTypeHorizon ChainType = "horizon"
+	// ChainTypeTON proxies toncenter (v3 REST and /api/v2/jsonRPC, path pass-through).
+	ChainTypeTON ChainType = "ton"
+	// ChainTypeStacks proxies the Stacks Hiro API (path pass-through).
+	ChainTypeStacks ChainType = "stacks"
 )
 
 // PassThroughPath tells whether the client's sub-path after /{chain} is

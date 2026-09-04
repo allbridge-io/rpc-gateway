@@ -16,7 +16,7 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/testutil/fakenode"
 )
 
-const chainTypeSoroban = fakenode.ChainTypeSoroban
+const chainTypeSoroban = config.ChainTypeSoroban
 
 // newSorobanFixture starts a gateway with one soroban chain (SRB) served by two
 // fake Soroban RPC nodes, loaded from a real TOML file like production does.

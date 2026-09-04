@@ -7,17 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0xProject/rpc-gateway/internal/chaintype"
 	"github.com/0xProject/rpc-gateway/internal/config"
 )
 
-// ChainTypeHorizon is the config value of the Stellar Horizon chain type.
+// config.ChainTypeHorizon is the config value of the Stellar Horizon chain type.
 // internal/config only declares constants for the types the gateway shipped
 // with, so tests of the newer types take theirs from the fake node.
-const ChainTypeHorizon = config.ChainType(chaintype.Horizon)
 
 func init() {
-	RegisterSim(ChainTypeHorizon, horizonSim)
+	RegisterSim(config.ChainTypeHorizon, horizonSim)
 }
 
 // horizonSim mimics the Stellar Horizon REST API: the root document carries the

@@ -13,8 +13,7 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/testutil/fakenode"
 )
 
-// chainTypeSui is the config value of the Sui chain type.
-const chainTypeSui = config.ChainType("sui")
+// config.ChainTypeSui is the config value of the Sui chain type.
 
 // suiEchoBody is a request the fake node does not simulate, so the answer names
 // the node that served it.
@@ -27,10 +26,10 @@ func newSuiProxy(t *testing.T, targets []config.Target, exceptions []config.Exce
 	opts := defaultOpts()
 	opts.TaintDuration = taint
 	opts.Now = clock.Now
-	m := NewManager("SUI", chainTypeSui, targets, opts, rec)
+	m := NewManager("SUI", config.ChainTypeSui, targets, opts, rec)
 	px, err := New(Options{
 		Chain:           "SUI",
-		Type:            chainTypeSui,
+		Type:            config.ChainTypeSui,
 		Targets:         targets,
 		Exceptions:      exceptions,
 		UpstreamTimeout: 2 * time.Second,
@@ -43,11 +42,11 @@ func newSuiProxy(t *testing.T, targets []config.Target, exceptions []config.Exce
 }
 
 func TestSui_HealthCheckUsesTheLatestCheckpoint(t *testing.T) {
-	n := fakenode.New(t, "PublicNode", chainTypeSui)
+	n := fakenode.New(t, "PublicNode", config.ChainTypeSui)
 	n.Set(fakenode.Behavior{Block: 379726054})
 	target := n.Target()
 	target.Headers = map[string]string{"X-Api-Key": "secret-key"}
-	m := NewManager("SUI", chainTypeSui, []config.Target{target}, defaultOpts(), nil)
+	m := NewManager("SUI", config.ChainTypeSui, []config.Target{target}, defaultOpts(), nil)
 
 	m.RunOnce(context.Background())
 
@@ -78,9 +77,9 @@ func TestSui_HealthCheckFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := fakenode.New(t, "PublicNode", chainTypeSui)
+			n := fakenode.New(t, "PublicNode", config.ChainTypeSui)
 			n.Set(tt.b)
-			m := NewManager("SUI", chainTypeSui, targetsOf(n), defaultOpts(), nil)
+			m := NewManager("SUI", config.ChainTypeSui, targetsOf(n), defaultOpts(), nil)
 
 			m.RunOnce(context.Background())
 
@@ -98,13 +97,13 @@ func TestSui_HealthCheckFailures(t *testing.T) {
 // Checkpoints advance every ~250ms, so a target that stopped following the
 // network must be taken out of rotation like any lagging EVM node.
 func TestSui_CheckpointLagBetweenNodes(t *testing.T) {
-	a := fakenode.New(t, "A", chainTypeSui)
-	b := fakenode.New(t, "B", chainTypeSui)
+	a := fakenode.New(t, "A", config.ChainTypeSui)
+	b := fakenode.New(t, "B", config.ChainTypeSui)
 	a.Set(fakenode.Behavior{Block: 379726054})
 	b.Set(fakenode.Behavior{Block: 379725054})
 	opts := defaultOpts()
 	opts.MaxBlockLag = 100
-	m := NewManager("SUI", chainTypeSui, targetsOf(a, b), opts, nil)
+	m := NewManager("SUI", config.ChainTypeSui, targetsOf(a, b), opts, nil)
 
 	m.RunOnce(context.Background())
 
@@ -115,7 +114,7 @@ func TestSui_CheckpointLagBetweenNodes(t *testing.T) {
 }
 
 func TestSui_JSONRPCForwardedVerbatim(t *testing.T) {
-	n := fakenode.New(t, "PublicNode", chainTypeSui)
+	n := fakenode.New(t, "PublicNode", config.ChainTypeSui)
 	p := newSuiProxy(t, targetsOf(n), nil, 0)
 
 	rr := post(p, suiEchoBody, nil)
@@ -143,7 +142,7 @@ func TestSui_JSONRPCForwardedVerbatim(t *testing.T) {
 }
 
 func TestSui_TargetURLPathIsKept(t *testing.T) {
-	n := fakenode.New(t, "Keyed", chainTypeSui)
+	n := fakenode.New(t, "Keyed", config.ChainTypeSui)
 	target := n.Target()
 	target.HTTPURL = n.URL() + "/v1/abc123"
 	p := newSuiProxy(t, []config.Target{target}, nil, 0)
@@ -157,7 +156,7 @@ func TestSui_TargetURLPathIsKept(t *testing.T) {
 }
 
 func TestSui_HeadersInjectedAndOverrideClient(t *testing.T) {
-	n := fakenode.New(t, "Keyed", chainTypeSui)
+	n := fakenode.New(t, "Keyed", config.ChainTypeSui)
 	target := n.Target()
 	target.Headers = map[string]string{"X-Api-Key": "server-key"}
 	p := newSuiProxy(t, []config.Target{target}, nil, 0)
@@ -189,9 +188,9 @@ func TestSui_ClientErrorsPassThrough(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bad := fakenode.New(t, "Bad", chainTypeSui)
+			bad := fakenode.New(t, "Bad", config.ChainTypeSui)
 			bad.Set(tt.b)
-			good := fakenode.New(t, "Good", chainTypeSui)
+			good := fakenode.New(t, "Good", config.ChainTypeSui)
 			p := newSuiProxy(t, targetsOf(bad, good), []config.Exception{{Match: "Transient error"}}, time.Second)
 
 			sawBad := false
@@ -230,9 +229,9 @@ func TestSui_NodeSideFailuresFailOver(t *testing.T) {
 	exceptions := []config.Exception{{Match: "Transient error"}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bad := fakenode.New(t, "Bad", chainTypeSui)
+			bad := fakenode.New(t, "Bad", config.ChainTypeSui)
 			bad.Set(tt.b)
-			good := fakenode.New(t, "Good", chainTypeSui)
+			good := fakenode.New(t, "Good", config.ChainTypeSui)
 			p := newSuiProxy(t, targetsOf(bad, good), exceptions, 10*time.Second)
 
 			for i := 0; i < 20 && bad.CallCount("") == 0; i++ {
@@ -260,14 +259,14 @@ func TestSui_NodeSideFailuresFailOver(t *testing.T) {
 }
 
 func TestSui_UpstreamTimeoutFailsOver(t *testing.T) {
-	slow := fakenode.New(t, "Slow", chainTypeSui)
+	slow := fakenode.New(t, "Slow", config.ChainTypeSui)
 	slow.Set(fakenode.Behavior{Hang: true})
-	good := fakenode.New(t, "Good", chainTypeSui)
+	good := fakenode.New(t, "Good", config.ChainTypeSui)
 	rec := &events.Recorder{}
 	targets := targetsOf(slow, good)
-	m := NewManager("SUI", chainTypeSui, targets, defaultOpts(), rec)
+	m := NewManager("SUI", config.ChainTypeSui, targets, defaultOpts(), rec)
 	px, err := New(Options{
-		Chain: "SUI", Type: chainTypeSui, Targets: targets,
+		Chain: "SUI", Type: config.ChainTypeSui, Targets: targets,
 		UpstreamTimeout: 100 * time.Millisecond, Observer: rec,
 	}, m)
 	if err != nil {

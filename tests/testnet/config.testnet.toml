@@ -121,7 +121,7 @@ match = "SERVER_BUSY"
 name = "TronGrid"
 http_url = "https://api.shasta.trongrid.io"
 
-# Anchors for the chain types still to come: a new chain's [chains.KEY]
+# Anchors, one per chain type (keeps parallel edits apart): a new chain's [chains.KEY]
 # block goes directly under the anchor of its type.
 
 # ---- sui ----
@@ -157,7 +157,6 @@ name = "Toncenter"
 http_url = "https://testnet.toncenter.com"
 
 # ---- stacks ----
-
 [chains.STX]                # Stacks testnet (Hiro API)
 type = "stacks"
 max_block_lag = 5

@@ -25,7 +25,7 @@ type horizonFixture struct {
 
 func newHorizonFixture(t *testing.T) *horizonFixture {
 	t.Helper()
-	hor := fakenode.New(t, "SDF", fakenode.ChainTypeHorizon)
+	hor := fakenode.New(t, "SDF", config.ChainTypeHorizon)
 	hor.Set(fakenode.Behavior{Block: 4501678})
 	evm := fakenode.New(t, "Evm", config.ChainTypeEVM)
 	evm.Set(fakenode.Behavior{Block: 100})

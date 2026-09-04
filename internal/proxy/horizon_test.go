@@ -21,10 +21,10 @@ func newHorizonProxy(t *testing.T, targets []config.Target, exceptions []config.
 	opts := defaultOpts()
 	opts.TaintDuration = taint
 	opts.Now = clock.Now
-	m := NewManager("SRB_HORIZON", fakenode.ChainTypeHorizon, targets, opts, rec)
+	m := NewManager("SRB_HORIZON", config.ChainTypeHorizon, targets, opts, rec)
 	px, err := New(Options{
 		Chain:           "SRB_HORIZON",
-		Type:            fakenode.ChainTypeHorizon,
+		Type:            config.ChainTypeHorizon,
 		Targets:         targets,
 		Exceptions:      exceptions,
 		UpstreamTimeout: 2 * time.Second,
@@ -66,11 +66,11 @@ func decodeHorizonEcho(t *testing.T, rr *httptest.ResponseRecorder) horizonEcho 
 }
 
 func TestHorizon_HealthCheckReadsTheRootDocument(t *testing.T) {
-	n := fakenode.New(t, "SDF", fakenode.ChainTypeHorizon)
+	n := fakenode.New(t, "SDF", config.ChainTypeHorizon)
 	n.Set(fakenode.Behavior{Block: 4501678})
 	target := n.Target()
 	target.Headers = map[string]string{"X-Api-Key": "secret-key"}
-	m := NewManager("SRB_HORIZON", fakenode.ChainTypeHorizon, []config.Target{target}, defaultOpts(), nil)
+	m := NewManager("SRB_HORIZON", config.ChainTypeHorizon, []config.Target{target}, defaultOpts(), nil)
 
 	m.RunOnce(context.Background())
 
@@ -100,9 +100,9 @@ func TestHorizon_HealthCheckFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := fakenode.New(t, "SDF", fakenode.ChainTypeHorizon)
+			n := fakenode.New(t, "SDF", config.ChainTypeHorizon)
 			n.Set(tt.b)
-			m := NewManager("SRB_HORIZON", fakenode.ChainTypeHorizon, targetsOf(n), defaultOpts(), nil)
+			m := NewManager("SRB_HORIZON", config.ChainTypeHorizon, targetsOf(n), defaultOpts(), nil)
 			m.RunOnce(context.Background())
 			if st := m.Status()[0]; st.Routable || !containsAny(st.LastError, tt.wantErr) {
 				t.Errorf("%s: %+v", tt.name, st)
@@ -114,13 +114,13 @@ func TestHorizon_HealthCheckFailures(t *testing.T) {
 // An instance whose ingestion is stuck answers every request happily; only the
 // ledger it reports gives it away.
 func TestHorizon_LedgerLagBetweenNodes(t *testing.T) {
-	a := fakenode.New(t, "A", fakenode.ChainTypeHorizon)
-	b := fakenode.New(t, "B", fakenode.ChainTypeHorizon)
+	a := fakenode.New(t, "A", config.ChainTypeHorizon)
+	b := fakenode.New(t, "B", config.ChainTypeHorizon)
 	a.Set(fakenode.Behavior{Block: 4501678})
 	b.Set(fakenode.Behavior{Block: 4501668})
 	opts := defaultOpts()
 	opts.MaxBlockLag = 5
-	m := NewManager("SRB_HORIZON", fakenode.ChainTypeHorizon, targetsOf(a, b), opts, nil)
+	m := NewManager("SRB_HORIZON", config.ChainTypeHorizon, targetsOf(a, b), opts, nil)
 
 	m.RunOnce(context.Background())
 
@@ -130,7 +130,7 @@ func TestHorizon_LedgerLagBetweenNodes(t *testing.T) {
 }
 
 func TestHorizon_PassesPathQueryAndMethod(t *testing.T) {
-	n := fakenode.New(t, "SDF", fakenode.ChainTypeHorizon)
+	n := fakenode.New(t, "SDF", config.ChainTypeHorizon)
 	n.Set(fakenode.Behavior{Block: 4501678})
 	p := newHorizonProxy(t, targetsOf(n), nil, 0)
 
@@ -170,7 +170,7 @@ func TestHorizon_PassesPathQueryAndMethod(t *testing.T) {
 }
 
 func TestHorizon_TargetBasePathAndQueryAreKept(t *testing.T) {
-	n := fakenode.New(t, "SDF", fakenode.ChainTypeHorizon)
+	n := fakenode.New(t, "SDF", config.ChainTypeHorizon)
 	target := n.Target()
 	target.HTTPURL = n.URL() + "/horizon/?apikey=k1"
 	p := newHorizonProxy(t, []config.Target{target}, nil, 0)
@@ -183,7 +183,7 @@ func TestHorizon_TargetBasePathAndQueryAreKept(t *testing.T) {
 }
 
 func TestHorizon_HeadersInjectedAndOverrideClient(t *testing.T) {
-	n := fakenode.New(t, "SDF", fakenode.ChainTypeHorizon)
+	n := fakenode.New(t, "SDF", config.ChainTypeHorizon)
 	target := n.Target()
 	target.Headers = map[string]string{"X-Api-Key": "server-key", "X-Extra": "1"}
 	p := newHorizonProxy(t, []config.Target{target}, nil, 0)
@@ -226,9 +226,9 @@ func TestHorizon_ClientErrorsPassThrough(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bad := fakenode.New(t, "Bad", fakenode.ChainTypeHorizon)
+			bad := fakenode.New(t, "Bad", config.ChainTypeHorizon)
 			bad.Set(tt.b)
-			good := fakenode.New(t, "Good", fakenode.ChainTypeHorizon)
+			good := fakenode.New(t, "Good", config.ChainTypeHorizon)
 			p := newHorizonProxy(t, targetsOf(bad, good), nil, time.Second)
 
 			sawBad := false
@@ -264,9 +264,9 @@ func TestHorizon_NodeSideFailuresFailOver(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bad := fakenode.New(t, "Bad", fakenode.ChainTypeHorizon)
+			bad := fakenode.New(t, "Bad", config.ChainTypeHorizon)
 			bad.Set(tt.b)
-			good := fakenode.New(t, "Good", fakenode.ChainTypeHorizon)
+			good := fakenode.New(t, "Good", config.ChainTypeHorizon)
 			p := newHorizonProxy(t, targetsOf(bad, good), nil, 10*time.Second)
 
 			for i := 0; i < 20 && bad.CallCount("") == 0; i++ {
@@ -292,15 +292,15 @@ func TestHorizon_NodeSideFailuresFailOver(t *testing.T) {
 }
 
 func TestHorizon_UpstreamTimeoutFailsOver(t *testing.T) {
-	slow := fakenode.New(t, "Slow", fakenode.ChainTypeHorizon)
+	slow := fakenode.New(t, "Slow", config.ChainTypeHorizon)
 	slow.Set(fakenode.Behavior{Hang: true})
-	good := fakenode.New(t, "Good", fakenode.ChainTypeHorizon)
+	good := fakenode.New(t, "Good", config.ChainTypeHorizon)
 	rec := &events.Recorder{}
 	targets := targetsOf(slow, good)
-	m := NewManager("SRB_HORIZON", fakenode.ChainTypeHorizon, targets, defaultOpts(), rec)
+	m := NewManager("SRB_HORIZON", config.ChainTypeHorizon, targets, defaultOpts(), rec)
 	px, err := New(Options{
 		Chain:           "SRB_HORIZON",
-		Type:            fakenode.ChainTypeHorizon,
+		Type:            config.ChainTypeHorizon,
 		Targets:         targets,
 		UpstreamTimeout: 100 * time.Millisecond,
 		Observer:        rec,

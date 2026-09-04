@@ -25,10 +25,10 @@ func TestTON_Registered(t *testing.T) {
 }
 
 func TestHead_TON(t *testing.T) {
-	n := fakenode.New(t, "Toncenter", fakenode.TypeTON)
+	n := fakenode.New(t, "Toncenter", config.ChainTypeTON)
 	n.Set(fakenode.Behavior{Block: 82614017})
 
-	block, err := head(t, fakenode.TypeTON, n, map[string]string{"X-API-Key": "secret"})
+	block, err := head(t, config.ChainTypeTON, n, map[string]string{"X-API-Key": "secret"})
 	if err != nil || block != 82614017 {
 		t.Fatalf("head = %d, %v", block, err)
 	}
@@ -44,9 +44,9 @@ func TestHead_TON(t *testing.T) {
 // A base path in http_url (a provider prefix or an API key path) must survive
 // the health check.
 func TestHead_TONKeepsTheTargetBasePath(t *testing.T) {
-	n := fakenode.New(t, "Toncenter", fakenode.TypeTON)
+	n := fakenode.New(t, "Toncenter", config.ChainTypeTON)
 	n.Set(fakenode.Behavior{Block: 7})
-	spec, _ := chaintype.Lookup(string(fakenode.TypeTON))
+	spec, _ := chaintype.Lookup(string(config.ChainTypeTON))
 
 	if _, err := spec.Head(context.Background(), http.DefaultClient, n.URL()+"/base", nil); err != nil {
 		t.Fatalf("head: %v", err)
@@ -77,10 +77,10 @@ func TestHead_TONFailureKinds(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := fakenode.New(t, "Toncenter", fakenode.TypeTON)
+			n := fakenode.New(t, "Toncenter", config.ChainTypeTON)
 			n.Set(tt.b)
 
-			block, err := head(t, fakenode.TypeTON, n, nil)
+			block, err := head(t, config.ChainTypeTON, n, nil)
 			if err == nil {
 				t.Fatalf("expected an error, got block %d", block)
 			}
@@ -107,7 +107,7 @@ func TestTON_InExampleConfig(t *testing.T) {
 	if !ok {
 		t.Fatal("the example config lacks chain TON")
 	}
-	if chain.Type != fakenode.TypeTON {
+	if chain.Type != config.ChainTypeTON {
 		t.Errorf("TON type = %q, want ton", chain.Type)
 	}
 	if !chain.Type.PassThroughPath() {

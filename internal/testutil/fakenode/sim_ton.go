@@ -9,13 +9,12 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/config"
 )
 
-// TypeTON is the chain type of a TON node. It lives here rather than in
+// config.ChainTypeTON is the chain type of a TON node. It lives here rather than in
 // internal/config because a chain type is meant to be added as new files only;
 // fakenode is the one package every test of the type already imports.
-const TypeTON config.ChainType = "ton"
 
 func init() {
-	RegisterSim(TypeTON, tonSim)
+	RegisterSim(config.ChainTypeTON, tonSim)
 }
 
 // tonSim mimics toncenter: GET /api/v3/masterchainInfo reports the head,

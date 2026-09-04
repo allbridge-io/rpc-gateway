@@ -7,17 +7,16 @@ import (
 	"github.com/0xProject/rpc-gateway/internal/config"
 )
 
-// chainTypeSui is the config value of the Sui chain type. internal/config keeps
+// config.ChainTypeSui is the config value of the Sui chain type. internal/config keeps
 // constants only for the types that existed before the registry, so the name is
 // spelled out here (and validated against the registry at config load).
-const chainTypeSui = config.ChainType("sui")
 
 // suiTestnetChainIdentifier is what the real testnet answers to
 // sui_getChainIdentifier: the first four bytes of the genesis checkpoint digest.
 const suiTestnetChainIdentifier = "4c78adac"
 
 func init() {
-	RegisterSim(chainTypeSui, suiSim)
+	RegisterSim(config.ChainTypeSui, suiSim)
 }
 
 // suiSim mimics the Sui JSON-RPC API. Every u64 is a decimal string, the way
