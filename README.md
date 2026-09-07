@@ -39,7 +39,7 @@ target; the client only sees the final answer. The response header
 | `GET /{chain}` + `Upgrade: websocket` | WebSocket, proxied to the target's `ws_url` (Solana subscriptions) |
 | `ANY /{chain}/{path}` | pass-through chain types only (`tron`, `horizon`, `ton`, `stacks`): the method, path and query are forwarded to the target (`/TRX/wallet/getnowblock`, `/TON/api/v3/masterchainInfo`, `/STX/v2/info`) |
 | `GET /status` | JSON snapshot of every chain and target: routable, block number, lag, taint, last error |
-| `GET /healthz` | Liveness for Render: `{"healthy":true}` whenever the process is up (never depends on upstreams) |
+| `GET /healthz` | Liveness: `{"healthy":true}` whenever the process is up (never depends on upstreams) |
 
 Unknown chains and routes return a JSON-RPC style error with HTTP 404. When no
 target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error.
@@ -274,14 +274,15 @@ a configured chain whose type registers none fails the suite. Point it at your o
 ## Deploying on Render
 
 [render.yaml](render.yaml) describes a single **private service**: Go native
-runtime, `make build-render`, `./app`, health check on `/healthz`. It has no
-public URL; other services of the same Render account and region reach it at
-`http://rpc-gateway:<port>` (the port the gateway listens on: `PORT` when
-Render sets it, otherwise `server.port`; the service page lists the detected
-ports). Nothing needs inbound access from the internet: the health check runs
-inside the platform and logs and metrics are pushed out over OTLP, so the
-Grafana dashboard works the same as for a public service; only `/status` is
-no longer reachable from a browser. The TOML config is a Render **secret
+runtime, `make build-render`, `./app`. It has no public URL; other services
+of the same Render account and region reach it at `http://rpc-gateway:<port>`
+(the port the gateway listens on: `PORT` when Render sets it, otherwise
+`server.port`; the service page lists the detected ports). Private services
+have no HTTP health check on Render: a deploy is live once the process starts
+and listens, and `/healthz` remains for checks from inside the network.
+Nothing needs inbound access from the internet: logs and metrics are pushed
+out over OTLP, so the Grafana dashboard works the same as for a public
+service; only `/status` is no longer reachable from a browser. The TOML config is a Render **secret
 file** mounted at `/etc/secrets/config.toml` (`CONFIG_TOML_PATH` points
 there); API keys referenced as `${NAME}` are plain environment variables.
 Logs are JSON on stdout; Render keeps them 7 days on Hobby and 14 on Pro.

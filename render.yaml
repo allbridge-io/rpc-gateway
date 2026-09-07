@@ -6,7 +6,10 @@
 # where <port> is the one the gateway listens on (PORT when Render sets it,
 # otherwise server.port from the TOML; the service page lists detected ports).
 # Nothing needs inbound access: logs and metrics are pushed to Grafana Cloud
-# over OTLP, and the Render health check runs inside the platform.
+# over OTLP. Private services have no HTTP health check on Render (the
+# Blueprint rejects healthCheckPath for pserv): a deploy is live once the
+# process starts and its port is detected. /healthz and /status stay available
+# for checks from inside the private network.
 #
 # Not applied automatically. Use it as the reference when creating the service
 # in the Render dashboard (or "New > Blueprint Instance"), then:
@@ -14,7 +17,7 @@
 #      Secret files cannot be declared in a Blueprint; the allbridge-next-configs repo uploads
 #      them with its "Upload Render Secret Files" workflow (# GROUP / # FILE header in the file).
 #   2. Add env vars referenced from the TOML as ${NAME} (API keys), if any.
-#   3. Deploy. The service reports ready once /healthz answers; /status shows every target.
+#   3. Deploy. Once the process is up, /status (from inside the network) shows every target.
 #
 # Go version: Render's native Go runtime honours the `go` directive in go.mod
 # (Go downloads the matching toolchain during the build), same as allbridge-next-info-server.
@@ -29,7 +32,6 @@ services:
     region: frankfurt
     buildCommand: make build-render
     startCommand: ./app
-    healthCheckPath: /healthz
     autoDeploy: false
     envVars:
       - key: CONFIG_TOML_PATH

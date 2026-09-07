@@ -52,12 +52,13 @@ func testTron(t *testing.T, e *env, key string, chain config.Chain) {
 		}
 	})
 	t.Run("client error passed through", func(t *testing.T) {
+		before := len(e.rec.Of(events.KindRerouted, ""))
 		resp, data := e.do(t, http.MethodPost, path+"/wallet/getaccount", []byte(`{"address":"not-an-address","visible":true}`))
 		if resp.StatusCode != http.StatusOK || !strings.Contains(string(data), `"Error"`) {
 			t.Fatalf("expected Tron's 200 + Error body, got HTTP %d %s", resp.StatusCode, truncate(data))
 		}
-		if ev := e.rec.Of(events.KindRerouted, ""); len(ev) != 0 {
-			t.Errorf("client error must not cause a reroute: %+v", ev)
+		if after := len(e.rec.Of(events.KindRerouted, "")); after != before {
+			t.Errorf("client error must not cause a reroute: %+v", e.rec.Of(events.KindRerouted, "")[before:])
 		}
 	})
 	t.Run("jsonrpc eth_chainId", func(t *testing.T) {

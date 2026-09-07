@@ -6,3 +6,4 @@ config.yml
 config.local.toml
 config.*.local.toml
 .claude/
+config.toml
