@@ -29,7 +29,7 @@ services:
     repo: https://github.com/allbridge-io/rpc-gateway
     branch: main
     plan: starter
-    region: frankfurt
+    region: virginia             # must match the services that call it: the private network does not cross regions
     buildCommand: make build-render
     startCommand: ./app
     autoDeploy: false
