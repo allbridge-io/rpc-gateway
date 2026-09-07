@@ -396,9 +396,11 @@ func TestLoad_FileErrors(t *testing.T) {
 
 // TestExampleConfigLoads keeps config.example.toml in the repo root valid.
 func TestExampleConfigLoads(t *testing.T) {
+	// The example must start with no environment at all: keyed providers are
+	// shown in comments, because ${NAME} is required even on disabled targets.
 	cfg := mustLoad(t, LoadOptions{
 		ConfigPath: filepath.Join("..", "..", "config.example.toml"),
-		LookupEnv:  envOf(map[string]string{"ALCHEMY_KEY": "example"}),
+		LookupEnv:  noEnv,
 	})
 	for _, key := range []string{"SPL", "ARB", "TRX", "SOL"} {
 		if _, ok := cfg.Chains[key]; !ok {

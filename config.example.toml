@@ -40,10 +40,13 @@ chain_id = "0xaa36a7"       # optional: expected eth_chainId, checked by testnet
 [[chains.SPL.targets]]      # order = failover priority is NOT implied; a random healthy target is used
 name = "PublicNode"
 http_url = "https://ethereum-sepolia-rpc.publicnode.com"
-[[chains.SPL.targets]]
-name = "Alchemy"
-http_url = "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
-disabled = true             # kept in config but not routed to
+# A keyed provider looks like this. Every ${NAME} in the file must be set at
+# startup, even on a target with disabled = true (the file is validated as a
+# whole, so flipping disabled later can never surprise you with a missing key).
+# [[chains.SPL.targets]]
+# name = "Alchemy"
+# http_url = "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+# disabled = true           # kept in config but not routed to
 
 [chains.ARB]                # Arbitrum Sepolia
 type = "evm"

@@ -183,7 +183,9 @@ Later sources win key by key:
 4. `PORT` (overrides `server.port`)
 
 Any string value may reference an environment variable as `${NAME}`; an
-unset name aborts startup listing what is missing. `CONFIG_TOML_SECTION`
+unset name aborts startup listing what is missing. This applies to disabled
+targets too: the file is validated as a whole, so enabling a target later
+can never fail on a key that was silently empty. `CONFIG_TOML_SECTION`
 takes only one top-level table of the files (for a TOML shared with other
 services, e.g. `[rpc_gateway.*]`). Arrays of tables are replaced as a whole
 when merged: a secret file can swap a chain's `targets`, not patch one entry.
@@ -211,7 +213,6 @@ A local `.env` file is loaded if present (see [.env.example](.env.example)).
 ```bash
 cp config.example.toml config.local.toml
 cp .env.example .env            # CONFIG_TOML_PATH=./config.local.toml, LOG_FORMAT=console
-echo 'ALCHEMY_KEY=x' >> .env    # any ${NAME} used in the config
 make run
 ```
 
