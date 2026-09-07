@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/0xProject/rpc-gateway/internal/chaintype"
 	"github.com/0xProject/rpc-gateway/internal/config"
 	"github.com/0xProject/rpc-gateway/internal/events"
 )
@@ -19,7 +18,7 @@ import (
 const horizonUnfundedAccount = "GADMTC3BAGNJRCSRNMS5DDE4MSZFCGZ464CFINXUB7UIBPLXBYWXLS27"
 
 func init() {
-	registerChecks(config.ChainType(chaintype.Horizon), typeChecks{
+	registerChecks(config.ChainTypeHorizon, typeChecks{
 		Verify: testHorizon,
 		Probe: func(t *testing.T, e *env, key string) *http.Response {
 			// The root document is Horizon's cheapest endpoint and the one the

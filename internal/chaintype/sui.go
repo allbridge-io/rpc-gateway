@@ -11,7 +11,7 @@ import (
 
 func init() {
 	Register(Spec{
-		Name: "sui",
+		Name: Sui,
 		Head: suiHead,
 		Doc:  "Sui JSON-RPC; the health check is `sui_getLatestCheckpointSequenceNumber`",
 	})
@@ -21,7 +21,7 @@ func init() {
 // sequence number is what advances (a new checkpoint every ~250ms), so it is
 // what the gateway compares between targets to detect a lagging one.
 func suiHead(ctx context.Context, client *http.Client, baseURL string, headers map[string]string) (uint64, error) {
-	raw, err := callJSONRPC(ctx, client, baseURL, headers, "sui_getLatestCheckpointSequenceNumber", nil)
+	raw, err := callJSONRPC(ctx, client, baseURL, headers, "sui_getLatestCheckpointSequenceNumber", []any{})
 	if err != nil {
 		return 0, err
 	}

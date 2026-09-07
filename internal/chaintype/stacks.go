@@ -9,7 +9,7 @@ import (
 
 func init() {
 	Register(Spec{
-		Name:        "stacks",
+		Name:        Stacks,
 		PassThrough: true,
 		Head:        stacksHead,
 		Doc:         "Stacks via the Hiro API, which also serves the node's `/v2/*`; the health check is `GET /v2/info`",

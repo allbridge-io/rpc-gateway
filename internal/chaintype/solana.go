@@ -9,7 +9,7 @@ import (
 
 func init() {
 	Register(Spec{
-		Name: "solana",
+		Name: Solana,
 		Head: solanaHead,
 		Doc:  "Solana JSON-RPC; the health check is `getSlot`",
 	})
@@ -17,7 +17,7 @@ func init() {
 
 // solanaHead reads the current slot, which Solana returns as a plain number.
 func solanaHead(ctx context.Context, client *http.Client, baseURL string, headers map[string]string) (uint64, error) {
-	raw, err := callJSONRPC(ctx, client, baseURL, headers, "getSlot", nil)
+	raw, err := callJSONRPC(ctx, client, baseURL, headers, "getSlot", []any{})
 	if err != nil {
 		return 0, err
 	}

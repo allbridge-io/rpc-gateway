@@ -26,21 +26,21 @@ import (
 type ChainType string
 
 const (
-	ChainTypeEVM    ChainType = "evm"
-	ChainTypeSolana ChainType = "solana"
+	ChainTypeEVM    ChainType = chaintype.EVM
+	ChainTypeSolana ChainType = chaintype.Solana
 	// ChainTypeTron proxies the Tron HTTP API (/wallet/*, /walletsolidity/*,
 	// /v1/*, /jsonrpc): the client's path and query are appended to the target URL.
-	ChainTypeTron ChainType = "tron"
+	ChainTypeTron ChainType = chaintype.Tron
 	// ChainTypeSui is a single-endpoint JSON-RPC chain (Sui fullnode).
-	ChainTypeSui ChainType = "sui"
+	ChainTypeSui ChainType = chaintype.Sui
 	// ChainTypeSoroban is a single-endpoint JSON-RPC chain (Stellar Soroban RPC).
-	ChainTypeSoroban ChainType = "soroban"
+	ChainTypeSoroban ChainType = chaintype.Soroban
 	// ChainTypeHorizon proxies the Stellar Horizon REST API (path pass-through).
-	ChainTypeHorizon ChainType = "horizon"
+	ChainTypeHorizon ChainType = chaintype.Horizon
 	// ChainTypeTON proxies toncenter (v3 REST and /api/v2/jsonRPC, path pass-through).
-	ChainTypeTON ChainType = "ton"
+	ChainTypeTON ChainType = chaintype.TON
 	// ChainTypeStacks proxies the Stacks Hiro API (path pass-through).
-	ChainTypeStacks ChainType = "stacks"
+	ChainTypeStacks ChainType = chaintype.Stacks
 )
 
 // PassThroughPath tells whether the client's sub-path after /{chain} is

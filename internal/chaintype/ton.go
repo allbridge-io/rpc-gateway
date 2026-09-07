@@ -9,7 +9,7 @@ import (
 
 func init() {
 	Register(Spec{
-		Name:        "ton",
+		Name:        TON,
 		PassThrough: true,
 		Head:        tonHead,
 		Doc:         "toncenter: the v3 REST API and `POST /api/v2/jsonRPC`; the health check is `GET /api/v3/masterchainInfo`",

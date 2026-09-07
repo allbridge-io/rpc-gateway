@@ -9,7 +9,7 @@ import (
 
 func init() {
 	Register(Spec{
-		Name:        "tron",
+		Name:        Tron,
 		PassThrough: true,
 		Head:        tronHead,
 		Doc:         "full Tron HTTP API; the health check is `POST /wallet/getnowblock`",

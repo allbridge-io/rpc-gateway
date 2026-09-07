@@ -7,12 +7,6 @@ import (
 	"net/http"
 )
 
-// Horizon is the registered name of the Stellar Horizon chain type. It is the
-// one place the string literal lives: internal/config only declares constants
-// for the types the gateway shipped with, so the fake node and the testnet
-// checks build their config.ChainType from this.
-const Horizon = "horizon"
-
 func init() {
 	Register(Spec{
 		Name:        Horizon,

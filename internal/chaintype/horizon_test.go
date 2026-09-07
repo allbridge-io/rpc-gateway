@@ -22,7 +22,7 @@ func TestRegistry_Horizon(t *testing.T) {
 	if spec.Name != chaintype.Horizon || spec.Head == nil || spec.Doc == "" {
 		t.Errorf("incomplete spec %+v", spec)
 	}
-	if !config.ChainType(chaintype.Horizon).PassThroughPath() {
+	if !config.ChainTypeHorizon.PassThroughPath() {
 		t.Error("config must see horizon as a pass-through type")
 	}
 }
@@ -112,7 +112,7 @@ func TestHorizon_ExampleConfigHasTheChain(t *testing.T) {
 	if !ok {
 		t.Fatalf("example config lacks chain SRB_HORIZON: %v", cfg.ChainKeys())
 	}
-	if chain.Type != config.ChainType(chaintype.Horizon) {
+	if chain.Type != config.ChainTypeHorizon {
 		t.Errorf("SRB_HORIZON type = %q", chain.Type)
 	}
 	if len(chain.Targets) == 0 || chain.Targets[0].HTTPURL == "" {

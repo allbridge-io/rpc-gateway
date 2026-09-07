@@ -9,7 +9,7 @@ import (
 
 func init() {
 	Register(Spec{
-		Name: "evm",
+		Name: EVM,
 		Head: evmHead,
 		Doc:  "any EVM network; the health check is `eth_blockNumber`",
 	})
@@ -18,7 +18,7 @@ func init() {
 // evmHead reads the head of an EVM chain with eth_blockNumber, whose result is
 // a 0x-prefixed quantity.
 func evmHead(ctx context.Context, client *http.Client, baseURL string, headers map[string]string) (uint64, error) {
-	raw, err := callJSONRPC(ctx, client, baseURL, headers, "eth_blockNumber", nil)
+	raw, err := callJSONRPC(ctx, client, baseURL, headers, "eth_blockNumber", []any{})
 	if err != nil {
 		return 0, err
 	}

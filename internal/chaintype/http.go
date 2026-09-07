@@ -25,7 +25,9 @@ type rpcRequest struct {
 	JSONRPC string `json:"jsonrpc"`
 	ID      int    `json:"id"`
 	Method  string `json:"method"`
-	Params  []any  `json:"params"`
+	// Params is omitted when nil: some servers (Soroban RPC) reject "params": []
+	// for parameterless methods, others (EVM, Solana) are happy either way.
+	Params any `json:"params,omitempty"`
 }
 
 type rpcError struct {
@@ -90,10 +92,10 @@ func do(client *http.Client, req *http.Request, headers map[string]string) ([]by
 
 // callJSONRPC performs one JSON-RPC 2.0 call over HTTP and returns the raw
 // result. Non-200 responses, malformed bodies and JSON-RPC errors are errors.
-func callJSONRPC(ctx context.Context, client *http.Client, url string, headers map[string]string, method string, params []any) (json.RawMessage, error) {
-	if params == nil {
-		params = []any{}
-	}
+//
+// params is sent as given: pass []any{} for an explicit empty array, or nil
+// to leave the field out entirely.
+func callJSONRPC(ctx context.Context, client *http.Client, url string, headers map[string]string, method string, params any) (json.RawMessage, error) {
 	payload, err := json.Marshal(rpcRequest{JSONRPC: "2.0", ID: 1, Method: method, Params: params})
 	if err != nil {
 		return nil, err

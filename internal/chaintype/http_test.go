@@ -3,6 +3,7 @@ package chaintype
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -157,5 +158,37 @@ func TestDoStripsURLSecretsFromClientErrors(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), secret) {
 		t.Errorf("timeout error repeats the key: %v", err)
+	}
+}
+
+// params: nil leaves the field out (Soroban RPC rejects "params": []),
+// an explicit empty slice sends it (EVM/Solana/Sui keep their old wire format).
+func TestCallJSONRPCParamsEncoding(t *testing.T) {
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`))
+	}))
+	defer srv.Close()
+	client := &http.Client{Timeout: time.Second}
+	if _, err := callJSONRPC(context.Background(), client, srv.URL, nil, "m", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := callJSONRPC(context.Background(), client, srv.URL, nil, "m", []any{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := callJSONRPC(context.Background(), client, srv.URL, nil, "m", []any{"0x1", true}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"m"}`,
+		`{"jsonrpc":"2.0","id":1,"method":"m","params":[]}`,
+		`{"jsonrpc":"2.0","id":1,"method":"m","params":["0x1",true]}`,
+	}
+	for i, w := range want {
+		if bodies[i] != w {
+			t.Errorf("request %d body = %s, want %s", i, bodies[i], w)
+		}
 	}
 }
