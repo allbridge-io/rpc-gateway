@@ -273,13 +273,20 @@ a configured chain whose type registers none fails the suite. Point it at your o
 
 ## Deploying on Render
 
-[render.yaml](render.yaml) describes the single web service: Go native
-runtime, `make build-render`, `./app`, health check on `/healthz`. The TOML
-config is a Render **secret file** mounted at `/etc/secrets/config.toml`
-(`CONFIG_TOML_PATH` points there); API keys referenced as `${NAME}` are plain
-environment variables. Logs are JSON on stdout; Render keeps them 7 days on
-Hobby and 14 on Pro. For longer history and dashboards, enable the OTLP
-export to Grafana Cloud below.
+[render.yaml](render.yaml) describes a single **private service**: Go native
+runtime, `make build-render`, `./app`, health check on `/healthz`. It has no
+public URL; other services of the same Render account and region reach it at
+`http://rpc-gateway:<port>` (the port the gateway listens on: `PORT` when
+Render sets it, otherwise `server.port`; the service page lists the detected
+ports). Nothing needs inbound access from the internet: the health check runs
+inside the platform and logs and metrics are pushed out over OTLP, so the
+Grafana dashboard works the same as for a public service; only `/status` is
+no longer reachable from a browser. The TOML config is a Render **secret
+file** mounted at `/etc/secrets/config.toml` (`CONFIG_TOML_PATH` points
+there); API keys referenced as `${NAME}` are plain environment variables.
+Logs are JSON on stdout; Render keeps them 7 days on Hobby and 14 on Pro.
+For longer history and dashboards, enable the OTLP export to Grafana Cloud
+below.
 
 ## Observability
 

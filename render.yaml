@@ -1,4 +1,12 @@
-# Render Blueprint for the RPC gateway: one web service serves every chain.
+# Render Blueprint for the RPC gateway: one private service serves every chain.
+#
+# The gateway is not exposed to the internet: it is a Render Private Service,
+# reachable only from other services of the same Render account and region at
+#   http://rpc-gateway:<port>
+# where <port> is the one the gateway listens on (PORT when Render sets it,
+# otherwise server.port from the TOML; the service page lists detected ports).
+# Nothing needs inbound access: logs and metrics are pushed to Grafana Cloud
+# over OTLP, and the Render health check runs inside the platform.
 #
 # Not applied automatically. Use it as the reference when creating the service
 # in the Render dashboard (or "New > Blueprint Instance"), then:
@@ -12,7 +20,7 @@
 # (Go downloads the matching toolchain during the build), same as allbridge-next-info-server.
 
 services:
-  - type: web
+  - type: pserv                # private service: no public URL
     name: rpc-gateway
     runtime: go
     repo: https://github.com/allbridge-io/rpc-gateway
