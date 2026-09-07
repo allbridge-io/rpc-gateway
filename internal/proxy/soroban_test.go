@@ -230,7 +230,7 @@ func TestSoroban_NodeSideFailuresFailOver(t *testing.T) {
 		{"http 500", fakenode.Behavior{HTTPStatus: 500}, true},
 		{"http 502", fakenode.Behavior{HTTPStatus: 502}, true},
 		{"http 429", fakenode.Behavior{HTTPStatus: 429}, true},
-		{"http 403 (bad api key)", fakenode.Behavior{HTTPStatus: 403}, true},
+		{"http 403 (bad api key)", fakenode.Behavior{HTTPStatus: 403}, false},
 		{"dropped connection", fakenode.Behavior{Drop: true}, true},
 		{"configured exception", fakenode.Behavior{RPCError: "transaction submission failed"}, false},
 	}

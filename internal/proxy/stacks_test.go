@@ -233,13 +233,14 @@ func TestStacks_ClientErrorsPassThrough(t *testing.T) {
 
 func TestStacks_NodeSideFailuresFailOver(t *testing.T) {
 	tests := []struct {
-		name string
-		b    fakenode.Behavior
+		name  string
+		b     fakenode.Behavior
+		taint bool // 401/403 may be caused by a forwarded client header: reroute only
 	}{
-		{"http 502", fakenode.Behavior{HTTPStatus: 502}},
-		{"http 429 rate limited", fakenode.Behavior{HTTPStatus: 429, RawBody: `{"statusCode":429,"error":"Too Many Requests"}`}},
-		{"http 401 (bad api key)", fakenode.Behavior{HTTPStatus: 401}},
-		{"dropped connection", fakenode.Behavior{Drop: true}},
+		{"http 502", fakenode.Behavior{HTTPStatus: 502}, true},
+		{"http 429 rate limited", fakenode.Behavior{HTTPStatus: 429, RawBody: `{"statusCode":429,"error":"Too Many Requests"}`}, true},
+		{"http 401 (bad api key)", fakenode.Behavior{HTTPStatus: 401}, false},
+		{"dropped connection", fakenode.Behavior{Drop: true}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -260,8 +261,8 @@ func TestStacks_NodeSideFailuresFailOver(t *testing.T) {
 			if len(p.rec.Of(events.KindRerouted, "Bad")) == 0 {
 				t.Fatal("expected a reroute away from Bad")
 			}
-			if !p.Manager().Status()[0].Tainted {
-				t.Error("a provider-side failure must taint the target")
+			if got := p.Manager().Status()[0].Tainted; got != tt.taint {
+				t.Errorf("tainted = %v, want %v", got, tt.taint)
 			}
 			for _, c := range good.Calls() {
 				if c.Body != `{"tx":"80800000"}` || c.Path != "/v2/transactions" {

@@ -135,8 +135,8 @@ func TestProxy_FailoverOnHTTPErrors(t *testing.T) {
 		{"500", fakenode.Behavior{HTTPStatus: 500}, true, "server error (500)"},
 		{"502", fakenode.Behavior{HTTPStatus: 502}, true, "server error (502)"},
 		{"429", fakenode.Behavior{HTTPStatus: 429}, true, "rate limited"},
-		{"403", fakenode.Behavior{HTTPStatus: 403}, true, "access denied (403)"},
-		{"401", fakenode.Behavior{HTTPStatus: 401}, true, "access denied (401)"},
+		{"403", fakenode.Behavior{HTTPStatus: 403}, false, "access denied (403)"},
+		{"401", fakenode.Behavior{HTTPStatus: 401}, false, "access denied (401)"},
 		{"413", fakenode.Behavior{HTTPStatus: 413}, false, "request entity too large"},
 		{"dropped connection", fakenode.Behavior{Drop: true}, true, "connection reset|EOF"},
 	}

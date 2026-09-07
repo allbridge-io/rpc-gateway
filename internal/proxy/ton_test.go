@@ -243,16 +243,17 @@ func TestTON_ClientSideErrorsPassThrough(t *testing.T) {
 
 func TestTON_NodeSideFailuresFailOver(t *testing.T) {
 	tests := []struct {
-		name string
-		b    fakenode.Behavior
+		name  string
+		b     fakenode.Behavior
+		taint bool // 401/403 may be caused by a forwarded client header: reroute only
 	}{
 		// toncenter answers 429 once the free rate limit (~1 rps) is exceeded:
 		// the target must be taken out of rotation, not returned to the client.
-		{"http 429 rate limited", fakenode.Behavior{HTTPStatus: 429, RawBody: `{"error":"Rate limit exceeded"}`}},
-		{"http 502", fakenode.Behavior{HTTPStatus: 502}},
-		{"http 503", fakenode.Behavior{HTTPStatus: 503, RawBody: `{"error":"lite server timeout"}`}},
-		{"http 401 (bad api key)", fakenode.Behavior{HTTPStatus: 401, RawBody: `{"error":"invalid api key"}`}},
-		{"dropped connection", fakenode.Behavior{Drop: true}},
+		{"http 429 rate limited", fakenode.Behavior{HTTPStatus: 429, RawBody: `{"error":"Rate limit exceeded"}`}, true},
+		{"http 502", fakenode.Behavior{HTTPStatus: 502}, true},
+		{"http 503", fakenode.Behavior{HTTPStatus: 503, RawBody: `{"error":"lite server timeout"}`}, true},
+		{"http 401 (bad api key)", fakenode.Behavior{HTTPStatus: 401, RawBody: `{"error":"invalid api key"}`}, false},
+		{"dropped connection", fakenode.Behavior{Drop: true}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -273,8 +274,8 @@ func TestTON_NodeSideFailuresFailOver(t *testing.T) {
 			if len(p.rec.Of(events.KindRerouted, "Bad")) == 0 {
 				t.Fatal("expected a reroute away from Bad")
 			}
-			if !p.Manager().Status()[0].Tainted {
-				t.Error("a node-side failure must taint the target")
+			if got := p.Manager().Status()[0].Tainted; got != tt.taint {
+				t.Errorf("tainted = %v, want %v", got, tt.taint)
 			}
 			for _, c := range good.Calls() {
 				if c.Path != "/api/v3/blocks" || c.Query != "limit=1" {

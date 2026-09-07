@@ -211,7 +211,11 @@ func (p *Proxy) modifyResponse(t config.Target) func(*http.Response) error {
 		case resp.StatusCode >= http.StatusInternalServerError:
 			return &upstreamError{reason: fmt.Sprintf("server error (%d)", resp.StatusCode), taint: true, status: resp.StatusCode}
 		case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-			return &upstreamError{reason: fmt.Sprintf("access denied (%d)", resp.StatusCode), taint: true, status: resp.StatusCode}
+			// Retry elsewhere, but do not taint: client headers are forwarded, so
+			// a caller with a bad Authorization/API-key header would otherwise
+			// take every target of the chain out for taint_duration. A key that
+			// is wrong in our config is caught by the health checks instead.
+			return &upstreamError{reason: fmt.Sprintf("access denied (%d)", resp.StatusCode), taint: false, status: resp.StatusCode}
 		case resp.StatusCode == http.StatusRequestEntityTooLarge:
 			return &upstreamError{reason: "request entity too large (413)", taint: false, status: resp.StatusCode}
 		}

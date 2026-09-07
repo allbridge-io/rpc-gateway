@@ -244,7 +244,7 @@ func TestTron_NodeSideFailuresFailOver(t *testing.T) {
 		{"BLOCK_UNSOLIDIFIED result code", fakenode.Behavior{TronResultCode: "BLOCK_UNSOLIDIFIED"}, false},
 		{"http 502", fakenode.Behavior{HTTPStatus: 502}, true},
 		{"http 429", fakenode.Behavior{HTTPStatus: 429}, true},
-		{"http 403 (bad api key)", fakenode.Behavior{HTTPStatus: 403}, true},
+		{"http 403 (bad api key)", fakenode.Behavior{HTTPStatus: 403}, false},
 		{"dropped connection", fakenode.Behavior{Drop: true}, true},
 	}
 	exceptions := []config.Exception{{Match: "SERVER_BUSY"}, {Match: "BLOCK_UNSOLIDIFIED"}}

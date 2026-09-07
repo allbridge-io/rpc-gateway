@@ -95,11 +95,15 @@ Every `interval` all targets of a chain are checked concurrently:
 - A target whose block number is more than `max_block_lag` behind the best
   target of the same chain is excluded until it catches up. This guards
   against providers that serve cached or stale data while "answering fine".
-- A request that fails at transport/HTTP level (timeout, 5xx, 429, 401/403,
-  dropped connection) is retried elsewhere **and** the target is *tainted*
-  for `taint_duration` (default 15s) so the next requests skip it.
-  Exception matches only retry the request: they describe a bad answer to
-  one request, not a bad node.
+- A request that fails at transport level or with HTTP 5xx or 429 is
+  retried elsewhere **and** the target is *tainted* for `taint_duration`
+  (default 15s) so the next requests skip it. 401, 403 and 413 are retried
+  on another target but do not taint: client headers are forwarded to the
+  target, so a caller with a bad `Authorization` or API-key header must not
+  be able to knock out every target of a chain for everyone. A key that is
+  wrong in the gateway's own config is caught by the health checks, which
+  use only the configured credentials. Exception matches only retry the
+  request: they describe a bad answer to one request, not a bad node.
 - Client-side errors (HTTP 4xx other than the above, JSON-RPC errors that
   match no exception, Tron `{"Error": ...}` bodies) are passed through
   untouched.
