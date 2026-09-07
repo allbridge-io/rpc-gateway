@@ -91,6 +91,7 @@ type Manager struct {
 	client   *http.Client
 	observer events.Observer
 	now      func() time.Time
+	redact   *redactor
 }
 
 // NewManager creates a Manager. Targets start optimistic (healthy) until the
@@ -121,6 +122,7 @@ func NewManager(chain string, typ config.ChainType, targets []config.Target, opt
 		client:   opts.Client,
 		observer: observer,
 		now:      opts.Now,
+		redact:   newRedactor(targets),
 	}
 	for _, t := range targets {
 		m.targets = append(m.targets, &targetState{cfg: t, healthy: true})
@@ -214,7 +216,7 @@ func (m *Manager) recordCheck(t *targetState, r checkResult, now time.Time) {
 	if r.err != nil {
 		t.failures++
 		t.successes = 0
-		t.lastErr = r.err.Error()
+		t.lastErr = m.redact.String(r.err.Error())
 		if t.healthy && t.failures >= m.opts.FailureThreshold {
 			t.healthy = false
 			reason := fmt.Sprintf("%d consecutive failed checks, last: %s", t.failures, t.lastErr)
@@ -300,6 +302,7 @@ func (m *Manager) Taint(i int, reason string) {
 	if m.opts.TaintDuration <= 0 {
 		return
 	}
+	reason = m.redact.String(reason)
 	t := m.targets[i]
 	t.mu.Lock()
 	until := m.now().Add(m.opts.TaintDuration)

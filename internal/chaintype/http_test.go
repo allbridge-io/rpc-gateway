@@ -2,10 +2,12 @@ package chaintype
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // This file is an internal test (package chaintype) because it exercises the
@@ -128,5 +130,32 @@ func TestTruncate(t *testing.T) {
 	}
 	if got := truncate("abc", 3); got != "abc" {
 		t.Errorf("truncate must leave short strings alone: %q", got)
+	}
+}
+
+// A target URL often carries an API key; the *url.Error net/http returns on a
+// failed request must not repeat it, while the cause stays inspectable.
+func TestDoStripsURLSecretsFromClientErrors(t *testing.T) {
+	const secret = "SECRET-KEY-789"
+	client := &http.Client{Timeout: time.Second}
+	_, err := getJSON(context.Background(), client, "http://127.0.0.1:9/v2/"+secret+"?api-key="+secret, nil)
+	if err == nil {
+		t.Fatal("expected a connection error")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("error repeats the key: %v", err)
+	}
+	if !strings.Contains(err.Error(), "http://127.0.0.1:9") || !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("host and cause should survive: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	_, err = getJSON(ctx, client, "http://127.0.0.1:9/v2/"+secret, nil)
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("wrapping must keep errors.Is working, got %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("timeout error repeats the key: %v", err)
 	}
 }

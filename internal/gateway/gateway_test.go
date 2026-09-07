@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -371,5 +372,62 @@ func TestGateway_PortInUseIsAnError(t *testing.T) {
 	err = f.gw.ListenAndServe(ctx)
 	if err == nil || !strings.Contains(err.Error(), "listen") {
 		t.Errorf("expected a listen error, got %v", err)
+	}
+}
+
+// Target URLs often carry API keys; /status and log events must never repeat them.
+func TestGateway_StatusAndEventsNeverLeakTargetURLs(t *testing.T) {
+	const secret = "SECRET-KEY-XYZ"
+	live := fakenode.New(t, "Live", config.ChainTypeEVM)
+	toml := fmt.Sprintf(`
+[server]
+port = 1
+[healthchecks]
+interval = "1h"
+timeout = "1s"
+failure_threshold = 1
+[chains.SPL]
+type = "evm"
+[[chains.SPL.targets]]
+name = "Live"
+http_url = "%s"
+[[chains.SPL.targets]]
+name = "Keyed"
+http_url = "http://127.0.0.1:9/v2/%s?api-key=%s"
+ws_url = "ws://127.0.0.1:9/ws/%s"
+`, live.URL(), secret, secret, secret)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.LoadOptions{ConfigPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := &events.Recorder{}
+	gw, err := New(cfg, nil, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(gw.Handler())
+	defer srv.Close()
+	gw.RunHealthChecksOnce(context.Background())
+
+	resp, err := http.Get(srv.URL + "/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `"lastError"`) {
+		t.Fatalf("expected the dead target to report an error: %s", body)
+	}
+	if strings.Contains(string(body), secret) {
+		t.Errorf("/status leaks the API key: %s", body)
+	}
+	for _, ev := range rec.All() {
+		if strings.Contains(ev.Reason, secret) || (ev.Err != nil && strings.Contains(ev.Err.Error(), secret)) {
+			t.Errorf("event %s leaks the API key: %+v", ev.Kind, ev)
+		}
 	}
 }

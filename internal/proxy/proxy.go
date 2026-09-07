@@ -46,6 +46,7 @@ type Proxy struct {
 	manager  *Manager
 	targets  []*upstream
 	observer events.Observer
+	redact   *redactor
 }
 
 // upstreamError is produced by ModifyResponse when the target's reply must be
@@ -79,7 +80,7 @@ func New(opts Options, manager *Manager) (*Proxy, error) {
 	if opts.MaxBodyBytes <= 0 {
 		opts.MaxBodyBytes = DefaultMaxBodyBytes
 	}
-	p := &Proxy{opts: opts, manager: manager, observer: opts.Observer}
+	p := &Proxy{opts: opts, manager: manager, observer: opts.Observer, redact: newRedactor(opts.Targets)}
 	for _, t := range opts.Targets {
 		httpProxy, wsProxy, err := newReverseProxies(t, opts.Type, opts.UpstreamTimeout)
 		if err != nil {
@@ -177,6 +178,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			t.httpProxy.ServeHTTP(w, req)
 		}
+		a.err = p.redact.Error(a.err) // never let a target URL (API key) reach logs or status
 		p.observer.UpstreamRequest(p.opts.Chain, t.cfg.Name, method, a.status, time.Since(start), a.err)
 
 		if a.err == nil {

@@ -106,7 +106,12 @@ Every `interval` all targets of a chain are checked concurrently:
 
 Everything above is observable on `GET /status` and in the structured log
 (`target unhealthy`, `target healthy`, `target tainted`, `request rerouted`,
-`no healthy targets`).
+`no healthy targets`). Targets are always referred to by their configured
+`name`: target URLs (which often carry API keys in the path or query) never
+appear in `/status`, in log lines or in metric labels. Error texts that would
+contain one (Go's `Post "https://…/v2/<key>": connection refused`) are
+reduced to scheme and host at the source, and any other occurrence of a
+target URL in a message is replaced by `<name>`.
 
 ## Configuration
 

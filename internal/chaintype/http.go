@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"strconv"
 	"strings"
 )
@@ -72,7 +74,7 @@ func do(client *http.Client, req *http.Request, headers map[string]string) ([]by
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, withoutURLSecrets(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -143,4 +145,21 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// withoutURLSecrets strips path, query and userinfo from the URL that
+// net/http embeds in *url.Error, keeping scheme and host. Target URLs often
+// carry API keys (".../v2/<key>", "?api-key=..."); the error text ends up in
+// /status and in logs, and must never repeat them. The wrapped cause is kept
+// so errors.Is(err, context.DeadlineExceeded) and friends still work.
+func withoutURLSecrets(err error) error {
+	var ue *neturl.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	safe := "<url>"
+	if u, perr := neturl.Parse(ue.URL); perr == nil && u.Host != "" {
+		safe = u.Scheme + "://" + u.Host
+	}
+	return &neturl.Error{Op: ue.Op, URL: safe, Err: ue.Err}
 }
