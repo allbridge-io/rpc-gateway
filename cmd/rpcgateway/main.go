@@ -98,24 +98,24 @@ func run() error {
 		zap.Uint("port", cfg.Server.Port))
 
 	var observer events.Observer = events.NewLogger(log)
-	var gw *gateway.Gateway // assigned below; the gauge callback reads it lazily
+	var metrics *telemetry.Metrics
 	if tel != nil {
-		metrics, err := tel.Metrics(func() []telemetry.TargetSnapshot {
-			if gw == nil {
-				return nil
-			}
-			return snapshots(gw.Status())
-		})
+		// The gauges need the gateway, which needs the observer: the snapshot
+		// source is installed once the gateway exists (SetSnapshot below).
+		metrics, err = tel.Metrics(nil)
 		if err != nil {
 			return fmt.Errorf("telemetry metrics: %w", err)
 		}
 		observer = events.Multi{observer, metrics}
 	}
 
-	gw, err = gateway.New(cfg, log, observer)
+	gw, err := gateway.New(cfg, log, observer)
 	if err != nil {
 		log.Error("cannot build gateway", zap.Error(err))
 		return err
+	}
+	if metrics != nil {
+		metrics.SetSnapshot(func() []telemetry.TargetSnapshot { return snapshots(gw.Status()) })
 	}
 
 	if err := gw.ListenAndServe(ctx); err != nil {

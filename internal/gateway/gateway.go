@@ -107,8 +107,14 @@ func (g *Gateway) StartHealthChecks(ctx context.Context) {
 }
 
 // ListenAndServe runs the gateway until ctx is cancelled: one initial health
-// round (so the first requests already avoid dead targets), periodic checks,
-// the HTTP server, and a graceful shutdown bounded by ShutdownTimeout.
+// round, periodic checks, the HTTP server, and a graceful shutdown bounded by
+// ShutdownTimeout.
+//
+// The initial round fills /status and the block numbers before the first
+// request, but it is one round: a dead target is only excluded once
+// FailureThreshold consecutive checks failed (2 by default), so it may still
+// receive the first requests. Those fail over and taint it, so clients are
+// not affected; set failure_threshold = 1 to exclude it from the start.
 func (g *Gateway) ListenAndServe(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

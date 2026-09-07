@@ -86,16 +86,27 @@ type HealthChecks struct {
 	SuccessThreshold uint `toml:"success_threshold" default:"1" validate:"gte=1"`
 	// MaxBlockLag marks a target unhealthy when its block (slot) number is behind
 	// the best target of the same chain by more than this many blocks.
-	// Set max_block_lag = 0 on a chain to disable the check for that chain.
-	MaxBlockLag uint64 `toml:"max_block_lag" default:"20"`
+	// Unset = 20. 0 disables the check; a chain may override either way.
+	MaxBlockLag *uint64 `toml:"max_block_lag"`
 	// TaintDuration is how long a target is excluded from routing after a request
-	// to it failed at transport/HTTP level (timeout, 5xx, 429, 403) and was retried
+	// to it failed at transport level or with HTTP 5xx / 429 and was retried
 	// elsewhere. Unset = 15s. "0s" disables tainting. Exception matches never taint.
 	TaintDuration *time.Duration `toml:"taint_duration"`
 }
 
 // DefaultTaintDuration applies when healthchecks.taint_duration is not set.
 const DefaultTaintDuration = 15 * time.Second
+
+// DefaultMaxBlockLag applies when healthchecks.max_block_lag is not set.
+const DefaultMaxBlockLag uint64 = 20
+
+// MaxBlockLagOrDefault returns the effective global block lag limit (0 = disabled).
+func (h HealthChecks) MaxBlockLagOrDefault() uint64 {
+	if h.MaxBlockLag == nil {
+		return DefaultMaxBlockLag
+	}
+	return *h.MaxBlockLag
+}
 
 // TaintDurationOrDefault returns the effective taint duration (0 = disabled).
 func (h HealthChecks) TaintDurationOrDefault() time.Duration {
@@ -172,7 +183,7 @@ func (c *Config) MaxBlockLagFor(chainKey string) uint64 {
 	if chain, ok := c.Chains[chainKey]; ok && chain.MaxBlockLag != nil {
 		return *chain.MaxBlockLag
 	}
-	return c.HealthChecks.MaxBlockLag
+	return c.HealthChecks.MaxBlockLagOrDefault()
 }
 
 // newValidator registers the custom tags used in struct definitions above.

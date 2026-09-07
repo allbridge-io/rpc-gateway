@@ -58,8 +58,8 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 	if cfg.HealthChecks.FailureThreshold != 2 || cfg.HealthChecks.SuccessThreshold != 1 {
 		t.Errorf("thresholds: %+v", cfg.HealthChecks)
 	}
-	if cfg.HealthChecks.MaxBlockLag != 20 {
-		t.Errorf("max_block_lag default: got %d", cfg.HealthChecks.MaxBlockLag)
+	if got := cfg.HealthChecks.MaxBlockLagOrDefault(); got != DefaultMaxBlockLag {
+		t.Errorf("max_block_lag default: got %d", got)
 	}
 	if got := cfg.HealthChecks.TaintDurationOrDefault(); got != DefaultTaintDuration {
 		t.Errorf("taint_duration default: got %v", got)
@@ -368,8 +368,12 @@ func TestLoad_ExplicitZeroUsesDefault(t *testing.T) {
 	if cfg.HealthChecks.FailureThreshold != 2 {
 		t.Errorf("failure_threshold: got %d want default 2", cfg.HealthChecks.FailureThreshold)
 	}
-	if cfg.HealthChecks.MaxBlockLag != 20 {
-		t.Errorf("global max_block_lag = 0 becomes default 20; got %d (disable it per chain instead)", cfg.HealthChecks.MaxBlockLag)
+	// max_block_lag is a pointer precisely so that an explicit 0 survives.
+	if got := cfg.HealthChecks.MaxBlockLagOrDefault(); got != 0 {
+		t.Errorf("global max_block_lag = 0 must disable the lag check, got %d", got)
+	}
+	if got := cfg.MaxBlockLagFor("SPL"); got != 0 {
+		t.Errorf("a chain without its own max_block_lag must inherit the disabled global one, got %d", got)
 	}
 }
 

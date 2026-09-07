@@ -23,7 +23,7 @@ interval = "5s"             # how often each target is checked
 timeout = "3s"              # single check timeout
 failure_threshold = 2       # consecutive failures -> unhealthy
 success_threshold = 1       # consecutive successes -> healthy again
-max_block_lag = 20          # unhealthy when this many blocks behind the best target of the chain
+max_block_lag = 20          # unhealthy when this many blocks behind the best target of the chain; 0 disables
 
 # Response body fragments that count as a target failure (request is retried on another target).
 [[exceptions]]

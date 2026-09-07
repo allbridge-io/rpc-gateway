@@ -132,7 +132,7 @@ interval = "5s"
 timeout = "3s"
 failure_threshold = 2
 success_threshold = 1
-max_block_lag = 20          # per-chain override: chains.X.max_block_lag (0 disables)
+max_block_lag = 20          # 0 disables; per-chain override: chains.X.max_block_lag
 taint_duration = "15s"      # "0s" disables tainting
 
 [[exceptions]]              # global; chains may add their own [[chains.X.exceptions]]
@@ -173,9 +173,10 @@ readable message): at least one chain and one target per chain, chain keys
 made of `[A-Za-z0-9_-]` and unique ignoring case, target names unique per
 chain, `http_url` with `http(s)://`, `ws_url` with `ws(s)://`, positive
 durations, thresholds ≥ 1, no unknown keys (a typo such as `prot` fails
-instead of silently falling back to a default). Explicit zero values are
-replaced by defaults (`failure_threshold = 0` becomes 2); disable block lag
-per chain with `max_block_lag = 0`, tainting with `taint_duration = "0s"`.
+instead of silently falling back to a default). Explicit zero values of
+timeouts and thresholds are replaced by defaults (`failure_threshold = 0`
+becomes 2); `max_block_lag = 0` (globally or per chain) disables the lag
+check and `taint_duration = "0s"` disables tainting.
 
 ### Sources and precedence
 
