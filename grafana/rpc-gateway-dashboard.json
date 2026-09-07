@@ -1,0 +1,634 @@
+{
+  "uid": "rpc-gateway",
+  "title": "RPC Gateway",
+  "description": "Health and traffic of the multi-chain RPC gateway. Import into Grafana Cloud and pick the Prometheus and Loki data sources of your stack.",
+  "tags": [
+    "rpc-gateway",
+    "allbridge"
+  ],
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 3,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "ds_prom",
+        "label": "Metrics source",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": ""
+      },
+      {
+        "type": "datasource",
+        "name": "ds_loki",
+        "label": "Logs source",
+        "query": "loki",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": ""
+      },
+      {
+        "type": "query",
+        "name": "chain",
+        "label": "Chain",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "definition": "label_values(rpc_gateway_target_routable, chain)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(rpc_gateway_target_routable, chain)",
+          "refId": "chain"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Targets",
+      "description": "One row per upstream target. Routable is the final verdict the router uses; Lag is how many blocks behind the best target of the same chain.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rpc_gateway_target_routable{chain=~\"$chain\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "rpc_gateway_target_block_number{chain=~\"$chain\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "expr": "rpc_gateway_target_lag{chain=~\"$chain\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 10
+      },
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(chain|target|Value #[ABC])$"
+            }
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "renameByName": {
+              "chain": "Chain",
+              "target": "Target",
+              "Value #A": "Routable",
+              "Value #B": "Block",
+              "Value #C": "Lag"
+            },
+            "indexByName": {
+              "chain": 0,
+              "target": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Chain"
+              },
+              {
+                "field": "Target"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Routable"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "DOWN",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Block"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Lag"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 20
+                    },
+                    {
+                      "color": "red",
+                      "value": 100
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Chain"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "bargauge",
+      "title": "Routable targets per chain",
+      "description": "How many targets of each chain may receive requests right now. Zero means the chain answers 503.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (chain) (rpc_gateway_target_routable{chain=~\"$chain\"})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "legendFormat": "{{chain}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 6,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "valueMode": "color"
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Requests per second",
+      "description": "Attempts to forward a request, split by chain and outcome.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{chain=~\"$chain\",outcome=\"ok\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "legendFormat": "{{chain}} ok"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{chain=~\"$chain\",outcome=\"error\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "legendFormat": "{{chain}} error"
+        }
+      ],
+      "gridPos": {
+        "x": 6,
+        "y": 10,
+        "w": 18,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMax": 1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Reroutes, taints and outages",
+      "description": "Reroute: a request failed on a target and was retried elsewhere. Taint: the target was excluded for a while. No healthy: nothing was left to try, the client got a 503.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (chain, target) (rate(rpc_gateway_reroutes_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "legendFormat": "reroute {{chain}}/{{target}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (chain, target) (rate(rpc_gateway_target_taints_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "legendFormat": "taint {{chain}}/{{target}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (chain) (rate(rpc_gateway_no_healthy_targets_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "legendFormat": "NO HEALTHY {{chain}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMax": 1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Upstream latency p95",
+      "description": "95th percentile of one attempt to a target.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, chain) (rate(rpc_gateway_upstream_duration_seconds_bucket{chain=~\"$chain\"}[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "legendFormat": "{{chain}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "logs",
+      "title": "Warnings and errors",
+      "description": "Every warn/error line from the gateway. Click a line to see its fields (chain, target, reason).",
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "queryType": "range",
+          "expr": "{service_name=\"rpc-gateway\"} | detected_level=~\"warn|error\""
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 11
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      }
+    }
+  ]
+}

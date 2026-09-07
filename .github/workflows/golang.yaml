@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GOLANGVERSION: 1.21
+  GOLANGVERSION: "1.26"
 
 jobs:
   test:
@@ -29,13 +29,10 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           key: cache-${{ hashFiles('**/go.sum') }}
-      - name: Start testing dependencies
-        run: docker-compose up -d
       - name: Run tests
-        run: go test -race -shuffle=on -v ./internal/...
-      - name: Print out docker containers' logs
-        if: always()
-        run: docker-compose logs
+        run: go test -race -shuffle=on -count=1 ./...
+      - name: Compile testnet tests
+        run: go test -tags testnet -run '^$' ./tests/testnet/...
 
   vulncheck:
     runs-on: ubuntu-latest
@@ -54,7 +51,6 @@ jobs:
         with:
           go-version: ${{ env.GOLANGVERSION }}
       - uses: actions/checkout@v4
-      - uses: golangci/golangci-lint-action@v3
+      - uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
-          args: --verbose --config .golangci.yml
+          version: v2.13

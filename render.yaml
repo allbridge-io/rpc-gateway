@@ -1,0 +1,53 @@
+# Render Blueprint for the RPC gateway: one private service serves every chain.
+#
+# The gateway is not exposed to the internet: it is a Render Private Service,
+# reachable only from other services of the same Render account and region at
+#   http://rpc-gateway:<port>
+# where <port> is the one the gateway listens on (PORT when Render sets it,
+# otherwise server.port from the TOML; the service page lists detected ports).
+# Nothing needs inbound access: logs and metrics are pushed to Grafana Cloud
+# over OTLP, and the Render health check runs inside the platform.
+#
+# Not applied automatically. Use it as the reference when creating the service
+# in the Render dashboard (or "New > Blueprint Instance"), then:
+#   1. Add the secret file  config.toml  with the TOML config (mounted at /etc/secrets/config.toml).
+#      Secret files cannot be declared in a Blueprint; the allbridge-next-configs repo uploads
+#      them with its "Upload Render Secret Files" workflow (# GROUP / # FILE header in the file).
+#   2. Add env vars referenced from the TOML as ${NAME} (API keys), if any.
+#   3. Deploy. The service reports ready once /healthz answers; /status shows every target.
+#
+# Go version: Render's native Go runtime honours the `go` directive in go.mod
+# (Go downloads the matching toolchain during the build), same as allbridge-next-info-server.
+
+services:
+  - type: pserv                # private service: no public URL
+    name: rpc-gateway
+    runtime: go
+    repo: https://github.com/allbridge-io/rpc-gateway
+    branch: main
+    plan: starter
+    region: frankfurt
+    buildCommand: make build-render
+    startCommand: ./app
+    healthCheckPath: /healthz
+    autoDeploy: false
+    envVars:
+      - key: CONFIG_TOML_PATH
+        value: /etc/secrets/config.toml
+      # Optional second file merged on top of the first one:
+      # - key: SECRET_CONFIG_TOML_PATH
+      #   value: /etc/secrets/secrets.toml
+      - key: LOG_FORMAT
+        value: json
+      - key: LOG_LEVEL
+        value: info
+      # API keys referenced from the TOML as ${ALCHEMY_KEY} etc. are set in the dashboard:
+      # - key: ALCHEMY_KEY
+      #   sync: false
+      # Logs and metrics to Grafana Cloud over OTLP (optional; unset = disabled):
+      # - key: OTEL_EXPORTER_OTLP_ENDPOINT
+      #   value: https://otlp-gateway-prod-eu-west-2.grafana.net/otlp
+      # - key: OTEL_EXPORTER_OTLP_HEADERS
+      #   sync: false   # Authorization=Basic <base64 of instanceId:token>
+      # - key: OTEL_RESOURCE_ATTRIBUTES
+      #   value: deployment.environment=prod
