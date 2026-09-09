@@ -345,7 +345,7 @@ Panels:
 - **Targets** — a table with one row per upstream: chain, target, routable
   (green OK / red DOWN), latest block, lag. The same information as
   `GET /status`, sortable and filterable.
-- **Routable targets per chain** — turns red when a chain has none left.
+- **Routable targets per chain** — one bar per chain labelled `alive / total` (3 / 4 = three of four configured targets are routable); the bar fills in proportion, orange means some are down, red means none are left.
 - **Requests per second** — traffic per chain, split into ok and error.
 - **Reroutes, taints and outages** — the failover activity; a line on
   "NO HEALTHY" means clients were getting 503.
