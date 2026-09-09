@@ -50,7 +50,7 @@ target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error
 |---|---|---|---|
 | `evm` | `eth_blockNumber` | ignored; the target URL is used as-is (API keys often live there) | any EVM network; `chain_id` is verified by the testnet suite |
 | `solana` | `getSlot` | ignored | WebSocket goes to `ws_url` (defaults to `http_url` with ws scheme) |
-| `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
+| `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API (`/wallet/*`, `/walletsolidity/*`, `/v1/*`) and the EVM-dialect `POST /jsonrpc`, all under one prefix; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
 | `sui` | `sui_getLatestCheckpointSequenceNumber` | ignored | Sui JSON-RPC; the checkpoint sequence number plays the role of the block number (u64 as a decimal string) |
 | `soroban` | `getHealth` | ignored | Stellar Soroban RPC; `getHealth` carries `latestLedger` and the server's own verdict, while `getLatestLedger` now ships the whole ledger meta |
 | `horizon` | `GET /` → `history_latest_ledger` | appended to the target base URL together with the query | Stellar Horizon REST API; its `problem+json` 4xx (unknown or malformed account) is a client error and passes through |
@@ -234,6 +234,8 @@ for k in sorted(d):
 curl -s localhost:3000/SPL -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
 curl -s -X POST localhost:3000/TRX/wallet/getnowblock
+curl -s localhost:3000/TRX/jsonrpc -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
 ```
 
 To watch a failover, add a dead target to a chain (`http_url = "http://127.0.0.1:9"`)

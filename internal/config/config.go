@@ -129,8 +129,11 @@ type Exception struct {
 // Chain is one blockchain network served by the gateway.
 type Chain struct {
 	Type ChainType `toml:"type" validate:"required,chain_type"`
-	// ChainID is the value eth_chainId is expected to return (EVM only, hex like "0xaa36a7").
-	// Optional; used by testnet checks and startup sanity checks.
+	// ChainID is the value eth_chainId is expected to return, hex like "0xaa36a7";
+	// it applies to evm chains and to tron, whose /jsonrpc speaks the EVM dialect.
+	// Optional, and never used for routing: the testnet suite verifies it with a
+	// real call, so a copy-pasted value cannot silently point a key at the wrong
+	// network.
 	ChainID string `toml:"chain_id" validate:"omitempty,hexadecimal_prefixed"`
 	// MaxBlockLag overrides HealthChecks.MaxBlockLag for this chain. 0 disables the check.
 	MaxBlockLag *uint64     `toml:"max_block_lag"`
