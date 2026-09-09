@@ -95,7 +95,11 @@ func run() error {
 		zap.String("path", os.Getenv(config.EnvConfigPath)),
 		zap.String("secret_path", os.Getenv(config.EnvSecretConfigPath)),
 		zap.Strings("chains", cfg.ChainKeys()),
-		zap.Uint("port", cfg.Server.Port))
+		zap.Uint("port", cfg.Server.Port),
+		zap.Int("api_keys", len(cfg.Server.APIKeys)))
+	if !cfg.Server.AuthEnabled() {
+		log.Warn("no server.api_keys configured: every route is open to anyone who can reach the port")
+	}
 
 	var observer events.Observer = events.NewLogger(log)
 	var metrics *telemetry.Metrics

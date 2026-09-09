@@ -10,6 +10,7 @@
 # Each chain is served on its own path prefix: POST http://host:port/<CHAIN_KEY>
 # WebSocket clients connect to ws://host:port/<CHAIN_KEY> (Solana).
 # Tron (type = "tron") passes the sub-path through: http://host:port/TRX/wallet/getnowblock
+# With server.api_keys set, the key goes first: http://host:port/<API_KEY>/<CHAIN_KEY>[/...]
 
 [server]
 port = 3000                 # overridden by PORT env (Render sets it)
@@ -17,6 +18,11 @@ upstream_timeout = "5s"     # max wait for a target to start responding before f
 read_timeout = "15s"
 write_timeout = "30s"
 shutdown_timeout = "10s"
+# API keys the clients must put in front of the path: /<API_KEY>/SOL, /<API_KEY>/TRX/wallet/getnowblock,
+# /<API_KEY>/status. Only /healthz stays public. Unset (or empty) = no authentication,
+# fine for a private network, not for a public URL. At least 16 characters of
+# [A-Za-z0-9_.~-]; several keys allow a rotation without downtime.
+# api_keys = ["${RPC_GATEWAY_API_KEY}"]          # openssl rand -hex 32
 
 [healthchecks]
 interval = "5s"             # how often each target is checked

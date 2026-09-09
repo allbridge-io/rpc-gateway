@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -50,16 +51,59 @@ func (g *Gateway) Status() Status {
 //	POST /{chain}          JSON-RPC request for the chain (key is case-insensitive)
 //	GET  /{chain}          WebSocket upgrade for the chain
 //	ANY  /{chain}/{path}   pass-through chains (Tron): path and query go to the target
+//
+// With server.api_keys configured, every route but /healthz lives under an
+// API key prefix instead: /{api-key}/status, /{api-key}/{chain}[/{path}].
+// A request without a valid key gets HTTP 401 and learns nothing else.
 func (g *Gateway) newRouter() http.Handler {
+	protected := http.NewServeMux()
+	protected.HandleFunc("GET /status", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, g.Status())
+	})
+	protected.HandleFunc("/", g.serveChain)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"healthy": true})
 	})
-	mux.HandleFunc("GET /status", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, g.Status())
-	})
-	mux.HandleFunc("/", g.serveChain)
+	mux.Handle("/", g.requireAPIKey(protected))
 	return g.recover(g.logRequests(mux))
+}
+
+// requireAPIKey is a no-op without configured keys. Otherwise it takes the
+// first path segment as the key, checks it against every configured key in
+// constant time and hands the rest of the path to next, so the routes behind
+// it never see the key. The key must never reach a log line or a response:
+// a rejected request has its path rewritten before it is logged.
+func (g *Gateway) requireAPIKey(next http.Handler) http.Handler {
+	keys := g.cfg.Server.APIKeys
+	if len(keys) == 0 {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+		if !keyMatches(keys, key) {
+			r.URL.Path = "/<invalid-key>/" + rest
+			r.URL.RawPath = ""
+			writeJSONError(w, http.StatusUnauthorized, "invalid or missing API key; use /{api-key}/{chain}")
+			return
+		}
+		r.URL.Path = "/" + rest
+		r.URL.RawPath = ""
+		next.ServeHTTP(w, r)
+	})
+}
+
+// keyMatches compares candidate with every key without early exit, so the
+// response time does not depend on how much of a key was guessed right.
+func keyMatches(keys []string, candidate string) bool {
+	found := 0
+	for _, k := range keys {
+		if len(k) == len(candidate) {
+			found |= subtle.ConstantTimeCompare([]byte(k), []byte(candidate))
+		}
+	}
+	return found == 1
 }
 
 func (g *Gateway) serveChain(w http.ResponseWriter, r *http.Request) {

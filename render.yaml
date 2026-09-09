@@ -1,37 +1,39 @@
-# Render Blueprint for the RPC gateway: one private service serves every chain.
+# Render Blueprint for the RPC gateway: one web service serves every chain.
 #
-# The gateway is not exposed to the internet: it is a Render Private Service,
-# reachable only from other services of the same Render account and region at
-#   http://rpc-gateway:<port>
-# where <port> is the one the gateway listens on (PORT when Render sets it,
-# otherwise server.port from the TOML; the service page lists detected ports).
-# Nothing needs inbound access: logs and metrics are pushed to Grafana Cloud
-# over OTLP. Private services have no HTTP health check on Render (the
-# Blueprint rejects healthCheckPath for pserv): a deploy is live once the
-# process starts and its port is detected. /healthz and /status stay available
-# for checks from inside the private network.
+# The gateway is exposed to the internet, so every route except /healthz is
+# behind an API key embedded in the URL (server.api_keys in the TOML):
+#   https://rpc-gateway.onrender.com/<API_KEY>/SOL
+#   https://rpc-gateway.onrender.com/<API_KEY>/TRX/wallet/getnowblock
+#   https://rpc-gateway.onrender.com/<API_KEY>/status
+# Clients treat that URL like any keyed provider URL (Alchemy, Infura); nothing
+# else changes on their side. Rotate a leaked key by listing the new one next to
+# the old one in api_keys, moving the clients, then dropping the old one.
+# /healthz stays public: it is the Render health check and says nothing more
+# than "the process is up".
 #
 # Not applied automatically. Use it as the reference when creating the service
 # in the Render dashboard (or "New > Blueprint Instance"), then:
 #   1. Add the secret file  config.toml  with the TOML config (mounted at /etc/secrets/config.toml).
 #      Secret files cannot be declared in a Blueprint; the allbridge-next-configs repo uploads
 #      them with its "Upload Render Secret Files" workflow (# GROUP / # FILE header in the file).
-#   2. Add env vars referenced from the TOML as ${NAME} (API keys), if any.
-#   3. Deploy. Once the process is up, /status (from inside the network) shows every target.
+#   2. Add env vars referenced from the TOML as ${NAME}: RPC_GATEWAY_API_KEY
+#      (openssl rand -hex 32) and the provider API keys, if any.
+#   3. Deploy. The service reports ready once /healthz answers; /<API_KEY>/status shows every target.
 #
 # Go version: Render's native Go runtime honours the `go` directive in go.mod
 # (Go downloads the matching toolchain during the build), same as allbridge-next-info-server.
 
 services:
-  - type: pserv                # private service: no public URL
+  - type: web
     name: rpc-gateway
     runtime: go
     repo: https://github.com/allbridge-io/rpc-gateway
     branch: main
     plan: starter
-    region: virginia             # must match the services that call it: the private network does not cross regions
+    region: virginia             # any region works for a public service; kept next to the callers
     buildCommand: make build-render
     startCommand: ./app
+    healthCheckPath: /healthz
     autoDeploy: false
     envVars:
       - key: CONFIG_TOML_PATH
@@ -43,7 +45,11 @@ services:
         value: json
       - key: LOG_LEVEL
         value: info
-      # API keys referenced from the TOML as ${ALCHEMY_KEY} etc. are set in the dashboard:
+      # The gateway's own API key, referenced from the TOML as ${RPC_GATEWAY_API_KEY}.
+      # Startup fails when it is unset, so a deploy can never come up open.
+      - key: RPC_GATEWAY_API_KEY
+        sync: false
+      # Provider API keys referenced from the TOML as ${ALCHEMY_KEY} etc. are set in the dashboard:
       # - key: ALCHEMY_KEY
       #   sync: false
       # Logs and metrics to Grafana Cloud over OTLP (optional; unset = disabled):

@@ -110,7 +110,11 @@ func startGateway(t *testing.T, mutate ...func(*config.Config)) *env {
 		t.Fatalf("gateway did not start (initial health round against testnets timed out?): %v", err)
 	}
 	t.Logf("gateway listening on %s with chains %v", addr, cfg.ChainKeys())
-	return &env{cfg: cfg, gw: gw, base: "http://" + addr, rec: rec, http: &http.Client{Timeout: requestTimeout}}
+	base := "http://" + addr
+	if cfg.Server.AuthEnabled() {
+		base += "/" + cfg.Server.APIKeys[0] // a production config brings its key along
+	}
+	return &env{cfg: cfg, gw: gw, base: base, rec: rec, http: &http.Client{Timeout: requestTimeout}}
 }
 
 // --- helpers ---

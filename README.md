@@ -44,6 +44,30 @@ target; the client only sees the final answer. The response header
 Unknown chains and routes return a JSON-RPC style error with HTTP 404. When no
 target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error.
 
+### API key in the URL
+
+The gateway is reachable from the internet, so `server.api_keys` puts every
+route except `/healthz` behind a key that is the first path segment, the way
+keyed providers do it (`https://eth-mainnet.g.alchemy.com/v2/<key>`):
+
+| With `api_keys` | Without |
+|---|---|
+| `POST /{api-key}/{chain}` | `POST /{chain}` |
+| `ANY /{api-key}/{chain}/{path}` | `ANY /{chain}/{path}` |
+| `GET /{api-key}/status` | `GET /status` |
+| `GET /healthz` | `GET /healthz` |
+
+Clients use `https://gateway/<key>/SOL` wherever they used a provider URL
+before; nothing else changes for them, WebSocket included. A request without
+a valid key gets HTTP 401 with a JSON-RPC style error and learns nothing
+else, not even the list of chains. Keys are compared in constant time, are
+never forwarded to a target, and never appear in a log line: accepted
+requests are logged with the key stripped, rejected ones as
+`/<invalid-key>/...`. Several keys can be listed, so a leaked key is rotated
+without downtime: add the new one, move the callers, drop the old one. An
+empty list means no authentication, which is fine on a private network only;
+the gateway warns about it at startup.
+
 ## Chain types
 
 | `type` | Health check | Client path | Notes |
@@ -126,6 +150,7 @@ commented example with public testnets.
 [server]
 port = 3000                 # PORT env overrides (Render sets it)
 upstream_timeout = "5s"     # wait for a target to start answering before failover
+api_keys = ["${RPC_GATEWAY_API_KEY}"]   # URL prefix every client must use; empty = open
 
 [healthchecks]
 interval = "5s"
@@ -172,8 +197,10 @@ Rules the loader enforces at startup (a violation is a fatal error with a
 readable message): at least one chain and one target per chain, chain keys
 made of `[A-Za-z0-9_-]` and unique ignoring case, target names unique per
 chain, `http_url` with `http(s)://`, `ws_url` with `ws(s)://`, positive
-durations, thresholds ≥ 1, no unknown keys (a typo such as `prot` fails
-instead of silently falling back to a default). Explicit zero values of
+durations, thresholds ≥ 1, `api_keys` entries of at least 16 characters
+from `[A-Za-z0-9_.~-]` (one URL segment, no encoding needed anywhere) and
+distinct, no unknown keys (a typo such as `prot` fails instead of silently
+falling back to a default). Explicit zero values of
 timeouts and thresholds are replaced by defaults (`failure_threshold = 0`
 becomes 2); `max_block_lag = 0` (globally or per chain) disables the lag
 check and `taint_duration = "0s"` disables tainting.
@@ -204,6 +231,7 @@ when merged: a secret file can swap a chain's `targets`, not patch one entry.
 | `CONFIG_OVERRIDE_TOML` | | inline TOML merged last |
 | `CONFIG_TOML_SECTION` | | use only this top-level table |
 | `PORT` | `server.port` | listening port |
+| `RPC_GATEWAY_API_KEY` | | not read directly: the value `server.api_keys` references as `${RPC_GATEWAY_API_KEY}` in the shipped configs |
 | `LOG_LEVEL` | `info` | `debug` also logs every request and upstream attempt |
 | `LOG_FORMAT` | `json` | `console` for local reading |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | | set to enable OTLP export of logs and metrics (see below) |
@@ -235,6 +263,10 @@ curl -s localhost:3000/SPL -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
 curl -s -X POST localhost:3000/TRX/wallet/getnowblock
 ```
+
+The example config has no `api_keys`, so the routes are open. With
+`api_keys = ["<key>"]` the same calls become `localhost:3000/<key>/status`,
+`localhost:3000/<key>/SPL` and `localhost:3000/<key>/TRX/wallet/getnowblock`.
 
 To watch a failover, add a dead target to a chain (`http_url = "http://127.0.0.1:9"`)
 and run with `LOG_LEVEL=debug`; roughly every second request will show
@@ -269,25 +301,24 @@ never used, and, in a second run, that a request landing on it is rerouted and
 the target tainted. The per-type checks live in `tests/testnet/checks_<type>_test.go`;
 a configured chain whose type registers none fails the suite. Point it at your own providers with
 `TESTNET_CONFIG_TOML_PATH=... [SECRET_CONFIG_TOML_PATH=...] make test-testnet`;
-`TESTNET_CHAINS=SOL,TRX` filters chains.
+`TESTNET_CHAINS=SOL,TRX` filters chains. A config with `api_keys` is fine:
+the suite prefixes every request with the first key.
 
 ## Deploying on Render
 
-[render.yaml](render.yaml) describes a single **private service**: Go native
-runtime, `make build-render`, `./app`. It has no public URL; other services
-of the same Render account and region reach it at `http://rpc-gateway:<port>`
-(the port the gateway listens on: `PORT` when Render sets it, otherwise
-`server.port`; the service page lists the detected ports). Private services
-have no HTTP health check on Render: a deploy is live once the process starts
-and listens, and `/healthz` remains for checks from inside the network.
-Nothing needs inbound access from the internet: logs and metrics are pushed
-out over OTLP, so the Grafana dashboard works the same as for a public
-service; only `/status` is no longer reachable from a browser. The TOML config is a Render **secret
-file** mounted at `/etc/secrets/config.toml` (`CONFIG_TOML_PATH` points
-there); API keys referenced as `${NAME}` are plain environment variables.
-Logs are JSON on stdout; Render keeps them 7 days on Hobby and 14 on Pro.
-For longer history and dashboards, enable the OTLP export to Grafana Cloud
-below.
+[render.yaml](render.yaml) describes a single **web service**: Go native
+runtime, `make build-render`, `./app`, health check on `/healthz`. The
+service has a public URL, so the production config sets
+`api_keys = ["${RPC_GATEWAY_API_KEY}"]` and callers use
+`https://<service>.onrender.com/<key>/SOL`, `/<key>/TRX/wallet/...`,
+`/<key>/status`. `RPC_GATEWAY_API_KEY` is a plain environment variable of the
+service (`openssl rand -hex 32`); startup fails while it is unset, so a
+deploy can never come up open by accident. The TOML config is a Render
+**secret file** mounted at `/etc/secrets/config.toml` (`CONFIG_TOML_PATH`
+points there); provider API keys referenced as `${NAME}` are environment
+variables too. Logs are JSON on stdout; Render keeps them 7 days on Hobby
+and 14 on Pro. For longer history and dashboards, enable the OTLP export to
+Grafana Cloud below.
 
 ## Observability
 
@@ -362,7 +393,7 @@ the repo) so the dashboard stays version-controlled.
 cmd/rpcgateway        main: env, logger, config, gateway lifecycle
 internal/chaintype    registry of chain types: health check + path handling, one file each
 internal/config       TOML schema, loading, merging, ${ENV} expansion, validation
-internal/gateway      router (/{chain}, /status, /healthz), server lifecycle
+internal/gateway      router (/{chain}, /status, /healthz, API key prefix), server lifecycle
 internal/proxy        per-chain failover proxy, health manager
 internal/events       Observer interface, Logger, Multi, Recorder
 internal/testutil     fakenode: programmable fake RPC node for tests

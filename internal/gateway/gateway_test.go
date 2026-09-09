@@ -35,6 +35,14 @@ type fixture struct {
 // two EVM targets for SPL and one Solana target for SOL.
 func newFixture(t *testing.T, extraTOML string) *fixture {
 	t.Helper()
+	return newFixtureWith(t, extraTOML, "")
+}
+
+// newFixtureWith is newFixture plus an inline override merged on top of the
+// file (the CONFIG_OVERRIDE_TOML path), for settings of tables the fixture
+// already declares, such as [server].
+func newFixtureWith(t *testing.T, extraTOML, overrideTOML string) *fixture {
+	t.Helper()
 	spl1 := fakenode.New(t, "Spl1", config.ChainTypeEVM)
 	spl2 := fakenode.New(t, "Spl2", config.ChainTypeEVM)
 	sol := fakenode.New(t, "Sol", config.ChainTypeSolana)
@@ -81,7 +89,7 @@ headers = { "TRON-PRO-API-KEY" = "test-key" }
 	if err := os.WriteFile(path, []byte(toml), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(config.LoadOptions{ConfigPath: path})
+	cfg, err := config.Load(config.LoadOptions{ConfigPath: path, OverrideTOML: overrideTOML})
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}

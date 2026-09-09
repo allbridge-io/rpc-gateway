@@ -71,7 +71,20 @@ type Server struct {
 	WriteTimeout time.Duration `toml:"write_timeout" default:"30s" validate:"gt=0"`
 	// ShutdownTimeout is how long in-flight requests may finish after SIGTERM.
 	ShutdownTimeout time.Duration `toml:"shutdown_timeout" default:"10s" validate:"gt=0"`
+	// APIKeys, when non-empty, turns on URL-embedded authentication: every
+	// route except /healthz must be prefixed with one of the keys, as in
+	// /{key}/{chain}, /{key}/{chain}/{path} and /{key}/status. Several keys
+	// let a key be rotated without downtime (add the new one, move the
+	// clients, drop the old one). Empty = no authentication (the default).
+	APIKeys []string `toml:"api_keys" validate:"omitempty,dive,min=1"`
 }
+
+// MinAPIKeyLength is the shortest api_keys entry accepted: the key is the
+// only thing between the internet and the providers' quotas.
+const MinAPIKeyLength = 16
+
+// AuthEnabled tells whether requests must carry an API key in the URL.
+func (s Server) AuthEnabled() bool { return len(s.APIKeys) > 0 }
 
 // HealthChecks holds the defaults of the background health checker. A chain may
 // override MaxBlockLag.
@@ -155,6 +168,10 @@ type Target struct {
 }
 
 var chainKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+
+// apiKeyPattern allows the URL-unreserved characters only, so a key is one
+// path segment that needs no percent-encoding anywhere (curl, TronWeb, web3 providers).
+var apiKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_.~-]+$`)
 
 // ChainKeys returns chain keys in a stable (sorted) order.
 func (c *Config) ChainKeys() []string {
@@ -240,8 +257,24 @@ func hasScheme(raw string, schemes ...string) bool {
 }
 
 // validateSemantics checks the rules that cannot be expressed with struct tags:
-// chain key format, uniqueness of chain keys and target names (case-insensitive).
+// API key format, chain key format, uniqueness of chain keys and target names
+// (case-insensitive).
 func validateSemantics(c *Config) error {
+	seenKeys := map[string]struct{}{}
+	for i, key := range c.Server.APIKeys {
+		// Never echo the key itself: config errors end up in logs.
+		if len(key) < MinAPIKeyLength {
+			return fmt.Errorf("server.api_keys[%d] is too short: use at least %d characters (openssl rand -hex 32)", i, MinAPIKeyLength)
+		}
+		if !apiKeyPattern.MatchString(key) {
+			return fmt.Errorf("server.api_keys[%d] is invalid: use letters, digits, '-', '_', '.' or '~' (it becomes a URL path segment)", i)
+		}
+		if _, dup := seenKeys[key]; dup {
+			return fmt.Errorf("server.api_keys[%d] repeats an earlier key", i)
+		}
+		seenKeys[key] = struct{}{}
+	}
+
 	seenChains := map[string]string{}
 	for _, key := range c.ChainKeys() {
 		if !chainKeyPattern.MatchString(key) {

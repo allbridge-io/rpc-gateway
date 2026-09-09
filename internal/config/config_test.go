@@ -342,6 +342,11 @@ func TestLoad_Invalid(t *testing.T) {
 		{"unknown key (typo)", "[server]\nprot = 3000\n" + minimalTOML, "unknown keys"},
 		{"unknown key in target", minimalTOML + "wss_url = \"wss://x\"\n", "unknown keys"},
 		{"malformed toml", "[chains.SPL\ntype = evm", "TOML"},
+		{"api key too short", "[server]\napi_keys = [\"short\"]\n" + minimalTOML, "too short"},
+		{"api key with slash", "[server]\napi_keys = [\"abcdefgh/abcdefghij\"]\n" + minimalTOML, "path segment"},
+		{"api key with space", "[server]\napi_keys = [\"abcdefgh abcdefghij\"]\n" + minimalTOML, "path segment"},
+		{"api key empty", "[server]\napi_keys = [\"\"]\n" + minimalTOML, "APIKeys"},
+		{"api key repeated", "[server]\napi_keys = [\"0123456789abcdef\", \"0123456789abcdef\"]\n" + minimalTOML, "repeats"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -353,6 +358,31 @@ func TestLoad_Invalid(t *testing.T) {
 				t.Errorf("error %q does not mention %q", err.Error(), tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestLoad_APIKeys(t *testing.T) {
+	cfg := mustLoad(t, LoadOptions{ConfigPath: writeFile(t, "c.toml", minimalTOML)})
+	if cfg.Server.AuthEnabled() || len(cfg.Server.APIKeys) != 0 {
+		t.Errorf("auth must be off by default: %+v", cfg.Server.APIKeys)
+	}
+
+	cfg = mustLoad(t, LoadOptions{
+		ConfigPath: writeFile(t, "c.toml", "[server]\napi_keys = [\"${GATEWAY_KEY}\", \"second-key_0123456789.~\"]\n"+minimalTOML),
+		LookupEnv:  envOf(map[string]string{"GATEWAY_KEY": "0123456789abcdef0123456789abcdef"}),
+	})
+	if !cfg.Server.AuthEnabled() {
+		t.Fatal("auth must be on")
+	}
+	if got := strings.Join(cfg.Server.APIKeys, ","); got != "0123456789abcdef0123456789abcdef,second-key_0123456789.~" {
+		t.Errorf("api_keys: %q", got)
+	}
+
+	// A key that leaks would be the whole point of the feature gone: the
+	// validation message must never quote it.
+	_, err := Load(LoadOptions{ConfigPath: writeFile(t, "c.toml", "[server]\napi_keys = [\"secret with space\"]\n"+minimalTOML), LookupEnv: noEnv})
+	if err == nil || strings.Contains(err.Error(), "secret with space") {
+		t.Errorf("validation error must not echo the key: %v", err)
 	}
 }
 
