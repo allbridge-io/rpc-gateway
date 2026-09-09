@@ -8,7 +8,7 @@
   ],
   "editable": true,
   "schemaVersion": 39,
-  "version": 3,
+  "version": 5,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -300,7 +300,7 @@
       "id": 2,
       "type": "bargauge",
       "title": "Routable targets per chain",
-      "description": "How many targets of each chain may receive requests right now. Zero means the chain answers 503.",
+      "description": "How many targets of each chain may receive requests right now, out of how many are configured (3 / 4 = three of four). A partly filled bar means some targets are down; red means the chain has none left and answers 503.",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -308,7 +308,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (chain) (rpc_gateway_target_routable{chain=~\"$chain\"})",
+          "expr": "label_replace(sum by (chain) (rpc_gateway_target_routable{chain=~\"$chain\"}) * on (chain) group_left(total) count_values by (chain) (\"total\", count by (chain) (rpc_gateway_target_routable{chain=~\"$chain\"})), \"unit\", \"/ $1\", \"total\", \"(.+)\")",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -316,8 +316,7 @@
           "editorMode": "code",
           "range": false,
           "instant": true,
-          "format": "time_series",
-          "legendFormat": "{{chain}}"
+          "format": "table"
         }
       ],
       "gridPos": {
@@ -326,21 +325,68 @@
         "w": 6,
         "h": 7
       },
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(chain|total|unit|Value)$"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "chain"
+              }
+            ]
+          }
+        },
+        {
+          "id": "rowsToFields",
+          "options": {
+            "mappings": [
+              {
+                "fieldName": "chain",
+                "handlerKey": "field.name"
+              },
+              {
+                "fieldName": "Value",
+                "handlerKey": "field.value"
+              },
+              {
+                "fieldName": "total",
+                "handlerKey": "max"
+              },
+              {
+                "fieldName": "unit",
+                "handlerKey": "unit"
+              }
+            ]
+          }
+        }
+      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
           "min": 0,
           "decimals": 0,
           "thresholds": {
-            "mode": "absolute",
+            "mode": "percentage",
             "steps": [
               {
                 "color": "red",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "orange",
                 "value": 1
+              },
+              {
+                "color": "green",
+                "value": 100
               }
             ]
           }

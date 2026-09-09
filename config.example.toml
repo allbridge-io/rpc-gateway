@@ -141,6 +141,7 @@ http_url = "https://testrpc.xlayer.tech"
 # ============================== Tron ==============================
 [chains.TRX]                # Tron Shasta: full HTTP API (/wallet/*, /walletsolidity/*, /v1/*, /jsonrpc)
 type = "tron"
+chain_id = "0x94a9059e"     # what /jsonrpc eth_chainId must return; checked by the testnet suite only
 max_block_lag = 5           # Tron blocks every 3s
 [[chains.TRX.exceptions]]   # node-side failures reported with HTTP 200; client errors are passed through
 match = "SERVER_BUSY"

@@ -74,7 +74,7 @@ the gateway warns about it at startup.
 |---|---|---|---|
 | `evm` | `eth_blockNumber` | ignored; the target URL is used as-is (API keys often live there) | any EVM network; `chain_id` is verified by the testnet suite |
 | `solana` | `getSlot` | ignored | WebSocket goes to `ws_url` (defaults to `http_url` with ws scheme) |
-| `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
+| `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API (`/wallet/*`, `/walletsolidity/*`, `/v1/*`) and the EVM-dialect `POST /jsonrpc`, all under one prefix; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
 | `sui` | `sui_getLatestCheckpointSequenceNumber` | ignored | Sui JSON-RPC; the checkpoint sequence number plays the role of the block number (u64 as a decimal string) |
 | `soroban` | `getHealth` | ignored | Stellar Soroban RPC; `getHealth` carries `latestLedger` and the server's own verdict, while `getLatestLedger` now ships the whole ledger meta |
 | `horizon` | `GET /` → `history_latest_ledger` | appended to the target base URL together with the query | Stellar Horizon REST API; its `problem+json` 4xx (unknown or malformed account) is a client error and passes through |
@@ -262,6 +262,8 @@ for k in sorted(d):
 curl -s localhost:3000/SPL -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
 curl -s -X POST localhost:3000/TRX/wallet/getnowblock
+curl -s localhost:3000/TRX/jsonrpc -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
 ```
 
 The example config has no `api_keys`, so the routes are open. With
@@ -376,7 +378,7 @@ Panels:
 - **Targets** — a table with one row per upstream: chain, target, routable
   (green OK / red DOWN), latest block, lag. The same information as
   `GET /status`, sortable and filterable.
-- **Routable targets per chain** — turns red when a chain has none left.
+- **Routable targets per chain** — one bar per chain labelled `alive / total` (3 / 4 = three of four configured targets are routable); the bar fills in proportion, orange means some are down, red means none are left.
 - **Requests per second** — traffic per chain, split into ok and error.
 - **Reroutes, taints and outages** — the failover activity; a line on
   "NO HEALTHY" means clients were getting 503.
