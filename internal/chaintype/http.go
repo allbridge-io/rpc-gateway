@@ -85,7 +85,7 @@ func do(client *http.Client, req *http.Request, headers map[string]string) ([]by
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("http status %d: %s", resp.StatusCode, truncate(string(body), 200))
+		return nil, fmt.Errorf("http status %d: %s", resp.StatusCode, describeBody(body))
 	}
 	return body, nil
 }
@@ -147,6 +147,33 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// describeBody compacts a non-200 response body for an error message. A proxy
+// error page (nginx 503 & co.) is worth one line, not eight: it is reduced to
+// its <title>. Anything else keeps its text, with whitespace runs collapsed so
+// a pretty-printed JSON error stays on a single line, and is truncated.
+func describeBody(body []byte) string {
+	s := strings.TrimSpace(string(body))
+	if s == "" {
+		return "empty body"
+	}
+	if s[0] == '<' {
+		lower := strings.ToLower(s)
+		if open := strings.Index(lower, "<title>"); open >= 0 {
+			rest := lower[open+len("<title>"):]
+			// ToLower can change byte lengths on non-ASCII text, so the
+			// indices found in lower are only trusted inside s's bounds.
+			if closeAt := strings.Index(rest, "</title>"); closeAt >= 0 && open+len("<title>")+closeAt <= len(s) {
+				start := open + len("<title>")
+				if title := strings.TrimSpace(s[start : start+closeAt]); title != "" {
+					return "html page: " + title
+				}
+			}
+		}
+		return "html page"
+	}
+	return truncate(strings.Join(strings.Fields(s), " "), 200)
 }
 
 // withoutURLSecrets strips path, query and userinfo from the URL that

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -231,11 +232,38 @@ func TestLogsReachTheCollectorWithEventFields(t *testing.T) {
 	}
 }
 
+// The application logger is built with zap.AddCaller() so stdout lines name the
+// call site; the OTLP core must not turn that into code.file.path & co.
+func TestOTLPRecordsCarryNoCallerAttributes(t *testing.T) {
+	tel, c, _ := setupWithCollector(t)
+	log := zap.New(mustCore(t, tel, zapcore.InfoLevel), zap.AddCaller())
+
+	log.Warn("target unhealthy", zap.String("chain", "SOL"))
+
+	if err := tel.ForceFlush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	records := c.logRecords()
+	if len(records) != 1 {
+		t.Fatalf("expected one record, got %+v", records)
+	}
+	attrs := records[0].attrs
+	if attrs["chain"] != "SOL" {
+		t.Errorf("event fields must survive: %v", attrs)
+	}
+	for k := range attrs {
+		if strings.HasPrefix(k, "code.") {
+			t.Errorf("caller attribute %q must not be exported: %v", k, attrs)
+		}
+	}
+}
+
 func TestMetricsReachTheCollector(t *testing.T) {
 	tel, c, _ := setupWithCollector(t)
 	snapshot := []TargetSnapshot{
 		{Chain: "SPL", Target: "Alchemy", Routable: true, BlockNumber: 100, Lag: 0},
 		{Chain: "SPL", Target: "Dead", Routable: false, BlockNumber: 90, Lag: 10},
+		{Chain: "SPL", Target: "Off", Routable: false, Disabled: true, BlockNumber: 0, Lag: 0},
 	}
 	m, err := tel.Metrics(func() []TargetSnapshot { return snapshot })
 	if err != nil {
@@ -283,6 +311,16 @@ func TestMetricsReachTheCollector(t *testing.T) {
 	routable := c.metric("rpc_gateway.target.routable")
 	if routable["chain=SPL;target=Alchemy;"].GetAsInt() != 1 || routable["chain=SPL;target=Dead;"].GetAsInt() != 0 {
 		t.Errorf("routable gauge: %v", keys(routable))
+	}
+	if routable["chain=SPL;target=Off;"].GetAsInt() != 0 {
+		t.Errorf("a disabled target is never routable: %v", keys(routable))
+	}
+	disabled := c.metric("rpc_gateway.target.disabled")
+	if disabled["chain=SPL;target=Off;"].GetAsInt() != 1 {
+		t.Errorf("disabled gauge: %v", keys(disabled))
+	}
+	if disabled["chain=SPL;target=Alchemy;"].GetAsInt() != 0 || disabled["chain=SPL;target=Dead;"].GetAsInt() != 0 {
+		t.Errorf("only the config-disabled target may report 1: %v", keys(disabled))
 	}
 	if c.metric("rpc_gateway.target.block_number")["chain=SPL;target=Dead;"].GetAsInt() != 90 ||
 		c.metric("rpc_gateway.target.lag")["chain=SPL;target=Dead;"].GetAsInt() != 10 {
