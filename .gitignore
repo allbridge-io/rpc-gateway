@@ -7,3 +7,4 @@ config.local.toml
 config.*.local.toml
 .claude/
 config.toml
+.idea/
