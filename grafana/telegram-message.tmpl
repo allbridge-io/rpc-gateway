@@ -1,0 +1,31 @@
+{{/*
+Notification template for the Telegram contact point. Stored in Grafana as
+Alerting -> Notification configuration -> Templates -> "rpc-gateway-telegram";
+the contact point's Message field is `{{ template "rpc.telegram" . }}` with
+Parse mode "None". The default Grafana message lists every label and two links
+per alert and gets cut at Telegram's 4096-character limit with 20+ chains.
+
+Rendered example:
+
+  🔴 FIRING · No routable targets (2)
+  • Chain ARB has no routable targets, clients get 503
+  • Chain AVA has no routable targets, clients get 503
+  Rule: https://<stack>.grafana.net/alerting/grafana/<uid>/view
+
+(the Rule line is omitted when there is no rule, e.g. contact point tests)
+
+  ✅ RESOLVED · No routable targets
+  • ARB — back to normal
+*/}}
+
+{{ define "rpc.who" }}{{ with .Labels.chain }}{{ . }}{{ end }}{{ with .Labels.target }} / {{ . }}{{ end }}{{ end }}
+
+{{ define "rpc.firing" }}• {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else }}{{ template "rpc.who" . }}{{ end }}{{ end }}
+
+{{ define "rpc.resolved" }}• {{ if .Labels.chain }}{{ template "rpc.who" . }} — back to normal{{ else }}back to normal{{ end }}{{ end }}
+
+{{ define "rpc.telegram" }}{{ if .Alerts.Firing }}🔴 FIRING · {{ (index .Alerts.Firing 0).Labels.alertname }}{{ if gt (len .Alerts.Firing) 1 }} ({{ len .Alerts.Firing }}){{ end }}
+{{ range .Alerts.Firing }}{{ template "rpc.firing" . }}
+{{ end }}{{ end }}{{ if .Alerts.Resolved }}✅ RESOLVED · {{ (index .Alerts.Resolved 0).Labels.alertname }}{{ if gt (len .Alerts.Resolved) 1 }} ({{ len .Alerts.Resolved }}){{ end }}
+{{ range .Alerts.Resolved }}{{ template "rpc.resolved" . }}
+{{ end }}{{ end }}{{ with (index .Alerts 0).GeneratorURL }}Rule: {{ . }}{{ end }}{{ end }}

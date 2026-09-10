@@ -426,6 +426,13 @@ then import the file (Alerting → Alert rules → More → Import). Metrics are
 exported once a minute, so expect a message 3–5 minutes after an outage
 starts, and a "Resolved" one when it ends.
 
+Messages use the template in
+[grafana/telegram-message.tmpl](grafana/telegram-message.tmpl) (Alerting →
+Notification configuration → Templates, name `rpc-gateway-telegram`; the
+contact point's Message is `{{ template "rpc.telegram" . }}`, parse mode
+None): one header line per notification, one line per chain or target, and
+a link to the rule, instead of Grafana's default dump of every label.
+
 ## Layout
 
 ```
