@@ -375,19 +375,31 @@ day-to-day view; Explore is only for ad-hoc digging. Import it once:
 
 Panels:
 
-- **Targets** — a table with one row per upstream: chain, target, routable
-  (green OK / red DOWN), latest block, lag. The same information as
-  `GET /status`, sortable and filterable.
-- **Routable targets per chain** — one bar per chain labelled `alive / total` (3 / 4 = three of four configured targets are routable); the bar fills in proportion, orange means some are down, red means none are left.
+- **Targets** — a table with one row per upstream: chain, target, state,
+  latest block, lag. State is green OK (routable), red DOWN (enabled but
+  failing its checks) or grey OFF (`disabled = true` in the config). The
+  same information as `GET /status`, sortable and filterable.
+- **Routable targets per chain** — one bar per chain labelled `alive / enabled`
+  (3 / 3 = all three enabled targets are routable; disabled targets are not
+  counted); the bar fills in proportion, orange means some are down, red
+  means none are left.
 - **Requests per second** — traffic per chain, split into ok and error.
 - **Reroutes, taints and outages** — the failover activity; a line on
   "NO HEALTHY" means clients were getting 503.
 - **Upstream latency p95** — how slow the providers are.
-- **Warnings and errors** — the log stream, click a line for its fields.
+- **Errors by method** — which JSON-RPC method fails on which target over the
+  selected range, with the error percentage; rows without errors are hidden.
+- **Error rate by target** — failed attempts per second, one line per target,
+  so a bad provider shows up as a spike.
+- **Warnings and errors** — the warn/error log lines as a table: time, level,
+  event, chain, target and the free-text reason.
 
-The **Chain** dropdown at the top filters every panel. Re-import the file
-after changing it in the UI (Dashboard settings → JSON Model → copy back into
-the repo) so the dashboard stays version-controlled.
+The **Environment** dropdown (values of `deployment.environment`, `prod` by
+default) and the **Chain** dropdown filter every panel; bookmark
+`?var-env=dev` for the dev view. Re-import the file after changing it in the
+UI (Dashboard settings → JSON Model → copy back into the repo) so the
+dashboard stays version-controlled; the uid is fixed, so an import replaces
+the existing dashboard in place.
 
 ## Layout
 

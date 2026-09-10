@@ -1,14 +1,14 @@
 {
   "uid": "rpc-gateway",
   "title": "RPC Gateway",
-  "description": "Health and traffic of the multi-chain RPC gateway. Import into Grafana Cloud and pick the Prometheus and Loki data sources of your stack.",
+  "description": "Health and traffic of the multi-chain RPC gateway. Environment picks prod or dev (deployment.environment). Import into Grafana Cloud and pick the Prometheus and Loki data sources of your stack.",
   "tags": [
     "rpc-gateway",
     "allbridge"
   ],
   "editable": true,
   "schemaVersion": 39,
-  "version": 5,
+  "version": 6,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -39,16 +39,40 @@
       },
       {
         "type": "query",
+        "name": "env",
+        "label": "Environment",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "definition": "label_values(rpc_gateway_target_routable, deployment_environment)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(rpc_gateway_target_routable, deployment_environment)",
+          "refId": "env"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "prod",
+          "value": "prod"
+        },
+        "hide": 0,
+        "sort": 1
+      },
+      {
+        "type": "query",
         "name": "chain",
         "label": "Chain",
         "datasource": {
           "type": "prometheus",
           "uid": "${ds_prom}"
         },
-        "definition": "label_values(rpc_gateway_target_routable, chain)",
+        "definition": "label_values(rpc_gateway_target_routable{deployment_environment=\"$env\"}, chain)",
         "query": {
           "qryType": 1,
-          "query": "label_values(rpc_gateway_target_routable, chain)",
+          "query": "label_values(rpc_gateway_target_routable{deployment_environment=\"$env\"}, chain)",
           "refId": "chain"
         },
         "refresh": 2,
@@ -73,7 +97,7 @@
       "id": 1,
       "type": "table",
       "title": "Targets",
-      "description": "One row per upstream target. Routable is the final verdict the router uses; Lag is how many blocks behind the best target of the same chain.",
+      "description": "One row per upstream target. State is the final verdict the router uses: OK is routable, DOWN is enabled but failing its checks, OFF is disabled in the config on purpose. Lag is how many blocks behind the best target of the same chain.",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -81,7 +105,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rpc_gateway_target_routable{chain=~\"$chain\"}",
+          "expr": "rpc_gateway_target_routable{deployment_environment=\"$env\",chain=~\"$chain\"} + 2 * rpc_gateway_target_disabled{deployment_environment=\"$env\",chain=~\"$chain\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -93,7 +117,7 @@
         },
         {
           "refId": "B",
-          "expr": "rpc_gateway_target_block_number{chain=~\"$chain\"}",
+          "expr": "rpc_gateway_target_block_number{deployment_environment=\"$env\",chain=~\"$chain\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -105,7 +129,7 @@
         },
         {
           "refId": "C",
-          "expr": "rpc_gateway_target_lag{chain=~\"$chain\"}",
+          "expr": "rpc_gateway_target_lag{deployment_environment=\"$env\",chain=~\"$chain\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -142,7 +166,7 @@
             "renameByName": {
               "chain": "Chain",
               "target": "Target",
-              "Value #A": "Routable",
+              "Value #A": "State",
               "Value #B": "Block",
               "Value #C": "Lag"
             },
@@ -184,7 +208,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Routable"
+              "options": "State"
             },
             "properties": [
               {
@@ -202,6 +226,11 @@
                         "text": "OK",
                         "color": "green",
                         "index": 1
+                      },
+                      "2": {
+                        "text": "OFF",
+                        "color": "#8e8e8e",
+                        "index": 2
                       }
                     }
                   }
@@ -215,7 +244,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 110
+                "value": 90
               }
             ]
           },
@@ -232,6 +261,10 @@
               {
                 "id": "decimals",
                 "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 140
               }
             ]
           },
@@ -300,7 +333,7 @@
       "id": 2,
       "type": "bargauge",
       "title": "Routable targets per chain",
-      "description": "How many targets of each chain may receive requests right now, out of how many are configured (3 / 4 = three of four). A partly filled bar means some targets are down; red means the chain has none left and answers 503.",
+      "description": "How many targets of each chain may receive requests right now, out of how many are enabled (3 / 3 = all three enabled targets are routable; targets disabled in the config are not counted). A partly filled bar means some targets are down; red means the chain has none left and answers 503.",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -308,7 +341,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "label_replace(sum by (chain) (rpc_gateway_target_routable{chain=~\"$chain\"}) * on (chain) group_left(total) count_values by (chain) (\"total\", count by (chain) (rpc_gateway_target_routable{chain=~\"$chain\"})), \"unit\", \"/ $1\", \"total\", \"(.+)\")",
+          "expr": "label_replace(sum by (chain) (rpc_gateway_target_routable{deployment_environment=\"$env\",chain=~\"$chain\"}) * on (chain) group_left(total) count_values by (chain) (\"total\", count by (chain) (rpc_gateway_target_routable{deployment_environment=\"$env\",chain=~\"$chain\"} unless rpc_gateway_target_disabled{deployment_environment=\"$env\",chain=~\"$chain\"} == 1)), \"unit\", \"/ $1\", \"total\", \"(.+)\")",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -323,7 +356,7 @@
         "x": 0,
         "y": 10,
         "w": 6,
-        "h": 7
+        "h": 15
       },
       "transformations": [
         {
@@ -421,7 +454,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{chain=~\"$chain\",outcome=\"ok\"}[$__rate_interval]))",
+          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"ok\"}[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -434,7 +467,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{chain=~\"$chain\",outcome=\"error\"}[$__rate_interval]))",
+          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"error\"}[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -498,7 +531,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (chain, target) (rate(rpc_gateway_reroutes_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "expr": "sum by (chain, target) (rate(rpc_gateway_reroutes_total{deployment_environment=\"$env\",chain=~\"$chain\"}[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -511,7 +544,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (chain, target) (rate(rpc_gateway_target_taints_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "expr": "sum by (chain, target) (rate(rpc_gateway_target_taints_total{deployment_environment=\"$env\",chain=~\"$chain\"}[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -524,7 +557,7 @@
         },
         {
           "refId": "C",
-          "expr": "sum by (chain) (rate(rpc_gateway_no_healthy_targets_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "expr": "sum by (chain) (rate(rpc_gateway_no_healthy_targets_total{deployment_environment=\"$env\",chain=~\"$chain\"}[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -537,9 +570,9 @@
         }
       ],
       "gridPos": {
-        "x": 0,
+        "x": 6,
         "y": 17,
-        "w": 12,
+        "w": 9,
         "h": 8
       },
       "fieldConfig": {
@@ -588,7 +621,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, chain) (rate(rpc_gateway_upstream_duration_seconds_bucket{chain=~\"$chain\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, chain) (rate(rpc_gateway_upstream_duration_seconds_bucket{deployment_environment=\"$env\",chain=~\"$chain\"}[$__rate_interval])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -601,9 +634,9 @@
         }
       ],
       "gridPos": {
-        "x": 12,
+        "x": 15,
         "y": 17,
-        "w": 12,
+        "w": 9,
         "h": 8
       },
       "fieldConfig": {
@@ -640,10 +673,309 @@
       }
     },
     {
+      "id": 7,
+      "type": "table",
+      "title": "Errors by method",
+      "description": "Which JSON-RPC method fails on which target, over the dashboard's time range. Errors and Requests are counts for the range; Error % is their ratio. Rows without errors are hidden. The same answer as typing sum by (chain, target, method) (rate(...{outcome=\"error\"})) in Explore.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (chain, target, method) (increase(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"error\"}[$__range]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (chain, target, method) (increase(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\"}[$__range]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "expr": "100 * sum by (chain, target, method) (increase(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"error\"}[$__range])) / sum by (chain, target, method) (increase(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\"}[$__range]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 12,
+        "h": 10
+      },
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(chain|target|method|Value #[ABC])$"
+            }
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "fieldName": "Value #A",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              }
+            ],
+            "type": "include",
+            "match": "all"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "renameByName": {
+              "chain": "Chain",
+              "target": "Target",
+              "method": "Method",
+              "Value #A": "Errors",
+              "Value #B": "Requests",
+              "Value #C": "Error %"
+            },
+            "indexByName": {
+              "chain": 0,
+              "target": 1,
+              "method": 2,
+              "Value #A": 3,
+              "Value #B": 4,
+              "Value #C": 5
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Errors",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "custom": {
+            "align": "auto",
+            "filterable": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Chain"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Target"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Error %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 5
+                    },
+                    {
+                      "color": "red",
+                      "value": 50
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Errors"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Requests"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Error rate by target",
+      "description": "Failed attempts per second, one line per target. Flat at zero is healthy; a spike shows when a target was failing and how hard. Split by method in the table on the left.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (chain, target) (rate(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"error\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "legendFormat": "{{chain}} {{target}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 25,
+        "w": 12,
+        "h": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 6,
-      "type": "logs",
+      "type": "table",
       "title": "Warnings and errors",
-      "description": "Every warn/error line from the gateway. Click a line to see its fields (chain, target, reason).",
+      "description": "Every warn/error line from the gateway, one row per event. Chain and Target are columns; Reason is the free text (last error, taint cause), cut to one line \u2014 hover a cell and click the inspect icon to read it in full.",
       "datasource": {
         "type": "loki",
         "uid": "${ds_loki}"
@@ -656,24 +988,227 @@
             "uid": "${ds_loki}"
           },
           "queryType": "range",
-          "expr": "{service_name=\"rpc-gateway\"} | detected_level=~\"warn|error\""
+          "expr": "{service_name=\"rpc-gateway\", deployment_environment=\"$env\"} | detected_level=~\"warn|error\""
         }
       ],
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 35,
         "w": 24,
         "h": 11
       },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "format": "auto",
+            "replace": false,
+            "keepTime": false
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(Time|Line|detected_level|chain|target|reason|duration|attempted)$"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "renameByName": {
+              "Time": "Time",
+              "detected_level": "Level",
+              "Line": "Event",
+              "chain": "Chain",
+              "target": "Target",
+              "reason": "Reason",
+              "duration": "Duration",
+              "attempted": "Attempted"
+            },
+            "indexByName": {
+              "Time": 0,
+              "detected_level": 1,
+              "Line": 2,
+              "chain": 3,
+              "target": 4,
+              "reason": 5,
+              "duration": 6,
+              "attempted": 7
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Time",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Level"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "warn": {
+                        "text": "WARN",
+                        "color": "orange",
+                        "index": 0
+                      },
+                      "error": {
+                        "text": "ERROR",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Event"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 220
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto",
+                  "wrapText": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Chain"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Target"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Reason"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto",
+                  "wrapText": false
+                }
+              },
+              {
+                "id": "custom.inspect",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duration"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Attempted"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      },
       "options": {
-        "showTime": true,
-        "showLabels": false,
-        "showCommonLabels": false,
-        "wrapLogMessage": true,
-        "prettifyLogMessage": false,
-        "enableLogDetails": true,
-        "dedupStrategy": "none",
-        "sortOrder": "Descending"
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
       }
     }
   ]
