@@ -1,7 +1,7 @@
 {
   "uid": "rpc-gateway-v2",
   "title": "RPC Gateway v2",
-  "description": "Health and traffic of the multi-chain RPC gateway. Import into Grafana Cloud and pick the Prometheus and Loki data sources of your stack.",
+  "description": "Health and traffic of the multi-chain RPC gateway. Environment picks prod or dev (deployment.environment). Import into Grafana Cloud and pick the Prometheus and Loki data sources of your stack.",
   "tags": [
     "rpc-gateway",
     "allbridge"
@@ -39,16 +39,40 @@
       },
       {
         "type": "query",
+        "name": "env",
+        "label": "Environment",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "definition": "label_values(rpc_gateway_target_routable, deployment_environment)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(rpc_gateway_target_routable, deployment_environment)",
+          "refId": "env"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "prod",
+          "value": "prod"
+        },
+        "hide": 0,
+        "sort": 1
+      },
+      {
+        "type": "query",
         "name": "chain",
         "label": "Chain",
         "datasource": {
           "type": "prometheus",
           "uid": "${ds_prom}"
         },
-        "definition": "label_values(rpc_gateway_target_routable, chain)",
+        "definition": "label_values(rpc_gateway_target_routable{deployment_environment=\"$env\"}, chain)",
         "query": {
           "qryType": 1,
-          "query": "label_values(rpc_gateway_target_routable, chain)",
+          "query": "label_values(rpc_gateway_target_routable{deployment_environment=\"$env\"}, chain)",
           "refId": "chain"
         },
         "refresh": 2,
@@ -81,7 +105,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rpc_gateway_target_routable{chain=~\"$chain\"} + 2 * rpc_gateway_target_disabled{chain=~\"$chain\"}",
+          "expr": "rpc_gateway_target_routable{deployment_environment=\"$env\",chain=~\"$chain\"} + 2 * rpc_gateway_target_disabled{deployment_environment=\"$env\",chain=~\"$chain\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -93,7 +117,7 @@
         },
         {
           "refId": "B",
-          "expr": "rpc_gateway_target_block_number{chain=~\"$chain\"}",
+          "expr": "rpc_gateway_target_block_number{deployment_environment=\"$env\",chain=~\"$chain\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -105,7 +129,7 @@
         },
         {
           "refId": "C",
-          "expr": "rpc_gateway_target_lag{chain=~\"$chain\"}",
+          "expr": "rpc_gateway_target_lag{deployment_environment=\"$env\",chain=~\"$chain\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -317,7 +341,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "label_replace(sum by (chain) (rpc_gateway_target_routable{chain=~\"$chain\"}) * on (chain) group_left(total) count_values by (chain) (\"total\", count by (chain) (rpc_gateway_target_routable{chain=~\"$chain\"} unless rpc_gateway_target_disabled{chain=~\"$chain\"} == 1)), \"unit\", \"/ $1\", \"total\", \"(.+)\")",
+          "expr": "label_replace(sum by (chain) (rpc_gateway_target_routable{deployment_environment=\"$env\",chain=~\"$chain\"}) * on (chain) group_left(total) count_values by (chain) (\"total\", count by (chain) (rpc_gateway_target_routable{deployment_environment=\"$env\",chain=~\"$chain\"} unless rpc_gateway_target_disabled{deployment_environment=\"$env\",chain=~\"$chain\"} == 1)), \"unit\", \"/ $1\", \"total\", \"(.+)\")",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -430,7 +454,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{chain=~\"$chain\",outcome=\"ok\"}[$__rate_interval]))",
+          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"ok\"}[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -443,7 +467,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{chain=~\"$chain\",outcome=\"error\"}[$__rate_interval]))",
+          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"error\"}[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -507,7 +531,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (chain, target) (rate(rpc_gateway_reroutes_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "expr": "sum by (chain, target) (rate(rpc_gateway_reroutes_total{deployment_environment=\"$env\",chain=~\"$chain\"}[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -520,7 +544,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (chain, target) (rate(rpc_gateway_target_taints_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "expr": "sum by (chain, target) (rate(rpc_gateway_target_taints_total{deployment_environment=\"$env\",chain=~\"$chain\"}[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -533,7 +557,7 @@
         },
         {
           "refId": "C",
-          "expr": "sum by (chain) (rate(rpc_gateway_no_healthy_targets_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "expr": "sum by (chain) (rate(rpc_gateway_no_healthy_targets_total{deployment_environment=\"$env\",chain=~\"$chain\"}[$__rate_interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -597,7 +621,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, chain) (rate(rpc_gateway_upstream_duration_seconds_bucket{chain=~\"$chain\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, chain) (rate(rpc_gateway_upstream_duration_seconds_bucket{deployment_environment=\"$env\",chain=~\"$chain\"}[$__rate_interval])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${ds_prom}"
@@ -665,7 +689,7 @@
             "uid": "${ds_loki}"
           },
           "queryType": "range",
-          "expr": "{service_name=\"rpc-gateway\"} | detected_level=~\"warn|error\""
+          "expr": "{service_name=\"rpc-gateway\", deployment_environment=\"$env\"} | detected_level=~\"warn|error\""
         }
       ],
       "gridPos": {

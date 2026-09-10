@@ -150,30 +150,136 @@ func truncate(s string, n int) string {
 }
 
 // describeBody compacts a non-200 response body for an error message. A proxy
-// error page (nginx 503 & co.) is worth one line, not eight: it is reduced to
-// its <title>. Anything else keeps its text, with whitespace runs collapsed so
-// a pretty-printed JSON error stays on a single line, and is truncated.
+// error page (nginx 503, a Cloudflare block page & co.) is worth one line, not
+// eight: it is reduced to its <title> and, when it adds something, its first
+// <h1>/<h2> ("html page: <title> — <heading>"); a page with neither falls back
+// to its visible text, or to a bare "html page". Anything else keeps its text,
+// with whitespace runs collapsed so a pretty-printed JSON error stays on a
+// single line, and is truncated.
 func describeBody(body []byte) string {
 	s := strings.TrimSpace(string(body))
 	if s == "" {
 		return "empty body"
 	}
 	if s[0] == '<' {
-		lower := strings.ToLower(s)
-		if open := strings.Index(lower, "<title>"); open >= 0 {
-			rest := lower[open+len("<title>"):]
-			// ToLower can change byte lengths on non-ASCII text, so the
-			// indices found in lower are only trusted inside s's bounds.
-			if closeAt := strings.Index(rest, "</title>"); closeAt >= 0 && open+len("<title>")+closeAt <= len(s) {
-				start := open + len("<title>")
-				if title := strings.TrimSpace(s[start : start+closeAt]); title != "" {
-					return "html page: " + title
+		return describeHTML(s)
+	}
+	return truncate(collapse(s), 200)
+}
+
+// describeHTML summarises an HTML error page in one line.
+func describeHTML(s string) string {
+	lower := strings.ToLower(s)
+	if len(lower) != len(s) {
+		// ToLower can change byte lengths on non-ASCII text, and the indices
+		// found in the lowercased copy then no longer map back to s. Describing
+		// the copy itself is good enough for an error message.
+		s = lower
+	}
+
+	title := collapse(between(lower, s, "<title>", "</title>"))
+	heading := firstHeading(lower, s)
+	switch {
+	case title != "" && heading != "" && !strings.Contains(strings.ToLower(title), strings.ToLower(heading)):
+		return "html page: " + title + " — " + heading
+	case title != "":
+		return "html page: " + title
+	case heading != "":
+		return "html page: " + heading
+	}
+	if text := truncate(visibleText(lower, s), 200); text != "" {
+		return "html page: " + text
+	}
+	return "html page"
+}
+
+// between returns the text between the open and close tags. The tags are found
+// case-insensitively in lower, a lowercased copy that mirrors s byte for byte,
+// so its indices can be used to slice s itself.
+func between(lower, s, open, closeTag string) string {
+	start := strings.Index(lower, open)
+	if start < 0 {
+		return ""
+	}
+	start += len(open)
+	end := strings.Index(lower[start:], closeTag)
+	if end < 0 {
+		return ""
+	}
+	return s[start : start+end]
+}
+
+// firstHeading returns the text of the first <h1> or <h2>, nested tags stripped
+// (<h1><span>Error 1015</span> rate limited</h1> keeps both words). The opening
+// tag may carry attributes, so it is closed at the next '>'.
+func firstHeading(lower, s string) string {
+	for _, tag := range []string{"<h1", "<h2"} {
+		start := strings.Index(lower, tag)
+		if start < 0 {
+			continue
+		}
+		gt := strings.Index(lower[start:], ">")
+		if gt < 0 {
+			continue
+		}
+		start += gt + 1
+		end := strings.Index(lower[start:], "</"+tag[1:])
+		if end < 0 {
+			continue
+		}
+		if heading := collapse(stripTags(s[start : start+end])); heading != "" {
+			return heading
+		}
+	}
+	return ""
+}
+
+// visibleText returns what a reader would see: <script> and <style> blocks and
+// every tag removed, whitespace collapsed. lower mirrors s byte for byte.
+func visibleText(lower, s string) string {
+	for _, tag := range []string{"script", "style"} {
+		open, closeTag := "<"+tag, "</"+tag
+		for {
+			start := strings.Index(lower, open)
+			if start < 0 {
+				break
+			}
+			end := len(s)
+			if i := strings.Index(lower[start+len(open):], closeTag); i >= 0 {
+				after := start + len(open) + i + len(closeTag)
+				if j := strings.Index(lower[after:], ">"); j >= 0 {
+					end = after + j + 1
 				}
 			}
+			s, lower = s[:start]+s[end:], lower[:start]+lower[end:]
 		}
-		return "html page"
 	}
-	return truncate(strings.Join(strings.Fields(s), " "), 200)
+	return collapse(stripTags(s))
+}
+
+// stripTags drops everything between '<' and '>', keeping the text around it.
+// A dropped tag leaves a space behind, so "<p>down</p><p>try later" does not
+// come out as one word; collapse squeezes the spaces afterwards.
+func stripTags(s string) string {
+	var b strings.Builder
+	inTag := false
+	for _, r := range s {
+		switch {
+		case r == '<':
+			inTag = true
+			b.WriteByte(' ')
+		case r == '>' && inTag:
+			inTag = false
+		case !inTag:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// collapse trims a string and squeezes every whitespace run into one space.
+func collapse(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // withoutURLSecrets strips path, query and userinfo from the URL that

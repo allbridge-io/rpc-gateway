@@ -137,8 +137,33 @@ func TestDescribeBody(t *testing.T) {
 			want: "html page: 503 Service Temporarily Unavailable",
 		},
 		{
+			name: "a heading that repeats the title is not repeated",
+			body: "<html><head><title>Attention Required! | Cloudflare</title></head><body><h1><span>Attention Required!</span></h1></body></html>",
+			want: "html page: Attention Required! | Cloudflare",
+		},
+		{
+			name: "a heading that adds to the title is appended",
+			body: "<html><head><title>Attention Required! | Cloudflare</title></head><body><h1><span>Error 1015</span> You are being rate limited</h1></body></html>",
+			want: "html page: Attention Required! | Cloudflare — Error 1015 You are being rate limited",
+		},
+		{
+			name: "a page without a title falls back to its heading",
+			body: "<html><body><h2 class=\"x\">Bad Gateway</h2><p>the upstream said no</p></body></html>",
+			want: "html page: Bad Gateway",
+		},
+		{
+			name: "a page with neither falls back to its visible text",
+			body: "<html><head><style>h1{}</style></head><body><script>var a=1;</script><p>Service   down</p><p>try later</p></body></html>",
+			want: "html page: Service down try later",
+		},
+		{
 			name: "html without a title says only that it is html",
 			body: "<!DOCTYPE html><html><body>nope</body></html>",
+			want: "html page: nope",
+		},
+		{
+			name: "html with no text at all says only that it is html",
+			body: "<html><body></body></html>",
 			want: "html page",
 		},
 		{
