@@ -355,10 +355,16 @@ What is exported ([internal/telemetry](internal/telemetry)):
   `rpc_gateway.reroutes`, `rpc_gateway.target.taints`,
   `rpc_gateway.target.health_changes`, `rpc_gateway.no_healthy_targets`,
   and gauges `rpc_gateway.target.routable`, `rpc_gateway.target.disabled`,
-  `rpc_gateway.target.block_number`, `rpc_gateway.target.lag`. Pass-through paths are cut to two segments in
-  `method` and id-looking segments become `{id}`, so addresses, hashes and
-  ledger numbers never become label values. A few hundred series at most,
-  far below the free tier's 10k.
+  `rpc_gateway.target.block_number`, `rpc_gateway.target.lag`. Pass-through
+  paths are cut to two segments in `method` and id-looking segments become
+  `{id}`, so addresses, hashes and ledger numbers never become label values.
+  Expect a few thousand series in total: the latency histogram alone is
+  eleven buckets per chain × target × method × outcome (about 3k with ~20
+  chains), everything else is a few hundred. That is under half of the
+  free tier's 10k active series; if it ever gets close, drop `method` from
+  the histogram in code rather than letting Grafana's Adaptive Metrics
+  aggregate labels away at ingestion, where the loss is invisible to readers
+  of this repo.
 
 Export failures (wrong token, endpoint down) are logged to stdout as
 `export error` and never affect request handling; the SDK batches and
