@@ -22,7 +22,7 @@ shutdown_timeout = "10s"
 # /<API_KEY>/status. Only /healthz stays public. Unset (or empty) = no authentication,
 # fine for a private network, not for a public URL. At least 16 characters of
 # [A-Za-z0-9_.~-]; several keys allow a rotation without downtime.
-# api_keys = ["${RPC_GATEWAY_API_KEY}"]          # openssl rand -hex 32
+# api_keys = ["<openssl rand -hex 32>"]           # literals; two entries while rotating
 
 [healthchecks]
 interval = "5s"             # how often each target is checked

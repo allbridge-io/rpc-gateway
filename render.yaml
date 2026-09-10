@@ -6,7 +6,8 @@
 #   https://rpc-gateway.onrender.com/<API_KEY>/TRX/wallet/getnowblock
 #   https://rpc-gateway.onrender.com/<API_KEY>/status
 # Clients treat that URL like any keyed provider URL (Alchemy, Infura); nothing
-# else changes on their side. Rotate a leaked key by listing the new one next to
+# else changes on their side. The keys are literals in the secret file
+# (openssl rand -hex 32). Rotate a leaked key by listing the new one next to
 # the old one in api_keys, moving the clients, then dropping the old one.
 # /healthz stays public: it is the Render health check and says nothing more
 # than "the process is up".
@@ -16,8 +17,7 @@
 #   1. Add the secret file  config.toml  with the TOML config (mounted at /etc/secrets/config.toml).
 #      Secret files cannot be declared in a Blueprint; the allbridge-next-configs repo uploads
 #      them with its "Upload Render Secret Files" workflow (# GROUP / # FILE header in the file).
-#   2. Add env vars referenced from the TOML as ${NAME}: RPC_GATEWAY_API_KEY
-#      (openssl rand -hex 32) and the provider API keys, if any.
+#   2. Add env vars referenced from the TOML as ${NAME} (provider API keys), if any.
 #   3. Deploy. The service reports ready once /healthz answers; /<API_KEY>/status shows every target.
 #
 # Go version: Render's native Go runtime honours the `go` directive in go.mod
@@ -45,10 +45,6 @@ services:
         value: json
       - key: LOG_LEVEL
         value: info
-      # The gateway's own API key, referenced from the TOML as ${RPC_GATEWAY_API_KEY}.
-      # Startup fails when it is unset, so a deploy can never come up open.
-      - key: RPC_GATEWAY_API_KEY
-        sync: false
       # Provider API keys referenced from the TOML as ${ALCHEMY_KEY} etc. are set in the dashboard:
       # - key: ALCHEMY_KEY
       #   sync: false

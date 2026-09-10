@@ -150,7 +150,7 @@ commented example with public testnets.
 [server]
 port = 3000                 # PORT env overrides (Render sets it)
 upstream_timeout = "5s"     # wait for a target to start answering before failover
-api_keys = ["${RPC_GATEWAY_API_KEY}"]   # URL prefix every client must use; empty = open
+api_keys = ["<openssl rand -hex 32>"]   # URL prefix every client must use; empty = open
 
 [healthchecks]
 interval = "5s"
@@ -231,7 +231,6 @@ when merged: a secret file can swap a chain's `targets`, not patch one entry.
 | `CONFIG_OVERRIDE_TOML` | | inline TOML merged last |
 | `CONFIG_TOML_SECTION` | | use only this top-level table |
 | `PORT` | `server.port` | listening port |
-| `RPC_GATEWAY_API_KEY` | | not read directly: the value `server.api_keys` references as `${RPC_GATEWAY_API_KEY}` in the shipped configs |
 | `LOG_LEVEL` | `info` | `debug` also logs every request and upstream attempt |
 | `LOG_FORMAT` | `json` | `console` for local reading |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | | set to enable OTLP export of logs and metrics (see below) |
@@ -310,15 +309,13 @@ the suite prefixes every request with the first key.
 
 [render.yaml](render.yaml) describes a single **web service**: Go native
 runtime, `make build-render`, `./app`, health check on `/healthz`. The
-service has a public URL, so the production config sets
-`api_keys = ["${RPC_GATEWAY_API_KEY}"]` and callers use
+service has a public URL, so the production config lists the gateway's own
+keys as literals in `api_keys` (`openssl rand -hex 32`) and callers use
 `https://<service>.onrender.com/<key>/SOL`, `/<key>/TRX/wallet/...`,
-`/<key>/status`. `RPC_GATEWAY_API_KEY` is a plain environment variable of the
-service (`openssl rand -hex 32`); startup fails while it is unset, so a
-deploy can never come up open by accident. The TOML config is a Render
-**secret file** mounted at `/etc/secrets/config.toml` (`CONFIG_TOML_PATH`
-points there); provider API keys referenced as `${NAME}` are environment
-variables too. Logs are JSON on stdout; Render keeps them 7 days on Hobby
+`/<key>/status`. The TOML config is a Render **secret file** mounted at
+`/etc/secrets/config.toml` (`CONFIG_TOML_PATH` points there), so the keys
+live only there; provider API keys referenced as `${NAME}` are environment
+variables. Logs are JSON on stdout; Render keeps them 7 days on Hobby
 and 14 on Pro. For longer history and dashboards, enable the OTLP export to
 Grafana Cloud below.
 
