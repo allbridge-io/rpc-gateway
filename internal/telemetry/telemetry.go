@@ -10,8 +10,10 @@
 //
 // Logs: a zap core bridged to the OTel log SDK, so every structured log line
 // at OTLP_LOG_LEVEL or above (default info) is exported, including the events
-// emitted by events.Logger. Metrics: an events.Observer that counts upstream
-// requests, reroutes, taints and exposes per-target health gauges.
+// emitted by events.Logger; the caller (file, function, line) is deliberately
+// dropped on the way out, so exported records carry only the event fields
+// while stdout keeps the caller. Metrics: an events.Observer that counts
+// upstream requests, reroutes, taints and exposes per-target health gauges.
 package telemetry
 
 import (
@@ -111,10 +113,33 @@ func Setup(ctx context.Context, opts Options) (*Telemetry, error) {
 	return &Telemetry{logs: logs, metrics: metrics}, nil
 }
 
+// withoutCaller strips the caller from entries before they reach the OTel
+// bridge, so exported records carry chain/target/reason and not
+// code.file.path & co. Stdout keeps the caller: the wrapper only sits in
+// front of the OTLP core.
+type withoutCaller struct{ zapcore.Core }
+
+func (c withoutCaller) With(fields []zapcore.Field) zapcore.Core {
+	return withoutCaller{c.Core.With(fields)}
+}
+
+func (c withoutCaller) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if c.Enabled(ent.Level) {
+		return ce.AddCore(ent, c)
+	}
+	return ce
+}
+
+func (c withoutCaller) Write(ent zapcore.Entry, fields []zapcore.Field) error {
+	ent.Caller = zapcore.EntryCaller{}
+	return c.Core.Write(ent, fields)
+}
+
 // ZapCore returns a zap core that exports records at or above level over OTLP.
-// Add it to the application logger with zapcore.NewTee.
+// Add it to the application logger with zapcore.NewTee. Caller information is
+// not exported: it would only add code.file.path & co. to every record.
 func (t *Telemetry) ZapCore(level zapcore.Level) (zapcore.Core, error) {
-	core := otelzap.NewCore("rpc-gateway", otelzap.WithLoggerProvider(t.logs))
+	core := withoutCaller{otelzap.NewCore("rpc-gateway", otelzap.WithLoggerProvider(t.logs))}
 	filtered, err := zapcore.NewIncreaseLevelCore(core, level)
 	if err != nil {
 		return nil, fmt.Errorf("otlp log level: %w", err)

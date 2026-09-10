@@ -16,9 +16,11 @@ import (
 // TargetSnapshot is what the gauges report for one target. The gateway's
 // /status output maps onto it; the closure lives in main to avoid coupling.
 type TargetSnapshot struct {
-	Chain       string
-	Target      string
-	Routable    bool
+	Chain    string
+	Target   string
+	Routable bool
+	// Disabled is set in the config; such a target is never routable.
+	Disabled    bool
 	BlockNumber uint64
 	Lag         uint64
 }
@@ -37,6 +39,7 @@ type SnapshotFunc func() []TargetSnapshot
 //	rpc_gateway.target.taints       counter
 //	rpc_gateway.target.health_changes counter  + healthy (true|false)
 //	rpc_gateway.target.routable     gauge      1 or 0
+//	rpc_gateway.target.disabled     gauge      1 when disabled in the config
 //	rpc_gateway.target.block_number gauge
 //	rpc_gateway.target.lag          gauge      blocks behind the best target
 type Metrics struct {
@@ -105,6 +108,11 @@ func NewMetrics(meter metric.Meter, snapshot SnapshotFunc) (*Metrics, error) {
 	if err != nil {
 		return nil, err
 	}
+	disabled, err := meter.Int64ObservableGauge("rpc_gateway.target.disabled",
+		metric.WithDescription("1 when the target is disabled in the config and therefore never routable"))
+	if err != nil {
+		return nil, err
+	}
 	_, err = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
 		m.mu.RLock()
 		fn := m.snapshot
@@ -119,11 +127,16 @@ func NewMetrics(meter metric.Meter, snapshot SnapshotFunc) (*Metrics, error) {
 				r = 1
 			}
 			o.ObserveInt64(routable, r, attrs)
+			var d int64
+			if s.Disabled {
+				d = 1
+			}
+			o.ObserveInt64(disabled, d, attrs)
 			o.ObserveInt64(block, clampInt64(s.BlockNumber), attrs)
 			o.ObserveInt64(lag, clampInt64(s.Lag), attrs)
 		}
 		return nil
-	}, routable, block, lag)
+	}, routable, block, lag, disabled)
 	if err != nil {
 		return nil, err
 	}

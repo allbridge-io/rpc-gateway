@@ -125,6 +125,69 @@ func TestParseHexUint64(t *testing.T) {
 	}
 }
 
+func TestDescribeBody(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "an nginx error page is reduced to its title",
+			body: "<html>\r\n<head><title>503 Service Temporarily Unavailable</title></head>\r\n<body>\r\n<center><h1>503 Service Temporarily Unavailable</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n",
+			want: "html page: 503 Service Temporarily Unavailable",
+		},
+		{
+			name: "html without a title says only that it is html",
+			body: "<!DOCTYPE html><html><body>nope</body></html>",
+			want: "html page",
+		},
+		{
+			name: "a multi-line json error collapses to one line",
+			body: "{\n  \"error\": \"rate limit\n exceeded\"\n}",
+			want: "{ \"error\": \"rate limit exceeded\" }",
+		},
+		{
+			name: "a long body is truncated",
+			body: strings.Repeat("a", 300),
+			want: strings.Repeat("a", 200) + "...",
+		},
+		{
+			name: "a blank body is named as such",
+			body: "  \n",
+			want: "empty body",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := describeBody([]byte(tt.body)); got != tt.want {
+				t.Errorf("describeBody = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// An upstream behind a proxy answers with an HTML page; the error that reaches
+// /status and the logs must carry one line, not the whole page.
+func TestGetJSON_HTMLErrorPageIsCompacted(t *testing.T) {
+	const page = "<html>\r\n<head><title>503 Service Temporarily Unavailable</title></head>\r\n<body>\r\n<center><h1>503 Service Temporarily Unavailable</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(page))
+	}))
+	defer srv.Close()
+
+	_, err := getJSON(context.Background(), srv.Client(), srv.URL, nil)
+	if err == nil {
+		t.Fatal("a non-200 status must be an error")
+	}
+	if !strings.Contains(err.Error(), "http status 503: html page: 503 Service Temporarily Unavailable") {
+		t.Errorf("error must name the status and the page title: %v", err)
+	}
+	if strings.Contains(err.Error(), "<html") {
+		t.Errorf("the html itself must not reach the error: %v", err)
+	}
+}
+
 func TestTruncate(t *testing.T) {
 	if got := truncate("abcdef", 3); got != "abc..." {
 		t.Errorf("truncate = %q", got)

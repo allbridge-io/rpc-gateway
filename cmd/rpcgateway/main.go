@@ -135,7 +135,8 @@ func snapshots(st gateway.Status) []telemetry.TargetSnapshot {
 	for chain, c := range st.Chains {
 		for _, t := range c.Targets {
 			out = append(out, telemetry.TargetSnapshot{
-				Chain: chain, Target: t.Name, Routable: t.Routable, BlockNumber: t.BlockNumber, Lag: t.Lag,
+				Chain: chain, Target: t.Name, Routable: t.Routable, Disabled: t.Disabled,
+				BlockNumber: t.BlockNumber, Lag: t.Lag,
 			})
 		}
 	}
