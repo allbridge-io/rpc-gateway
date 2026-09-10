@@ -143,8 +143,8 @@
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 24,
-        "h": 10
+        "w": 10,
+        "h": 16
       },
       "transformations": [
         {
@@ -330,6 +330,83 @@
       }
     },
     {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Requests per second",
+      "description": "Attempts to forward a request, split by chain and outcome.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prom}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"ok\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "legendFormat": "{{chain}} ok"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"error\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "editorMode": "code",
+          "range": true,
+          "instant": false,
+          "format": "time_series",
+          "legendFormat": "{{chain}} error"
+        }
+      ],
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 10,
+        "h": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMax": 1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 2,
       "type": "bargauge",
       "title": "Routable targets per chain",
@@ -353,10 +430,10 @@
         }
       ],
       "gridPos": {
-        "x": 0,
-        "y": 10,
-        "w": 6,
-        "h": 15
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 16
       },
       "transformations": [
         {
@@ -443,83 +520,6 @@
       }
     },
     {
-      "id": 3,
-      "type": "timeseries",
-      "title": "Requests per second",
-      "description": "Attempts to forward a request, split by chain and outcome.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${ds_prom}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"ok\"}[$__rate_interval]))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${ds_prom}"
-          },
-          "editorMode": "code",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "legendFormat": "{{chain}} ok"
-        },
-        {
-          "refId": "B",
-          "expr": "sum by (chain) (rate(rpc_gateway_upstream_requests_total{deployment_environment=\"$env\",chain=~\"$chain\",outcome=\"error\"}[$__rate_interval]))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${ds_prom}"
-          },
-          "editorMode": "code",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "legendFormat": "{{chain}} error"
-        }
-      ],
-      "gridPos": {
-        "x": 6,
-        "y": 10,
-        "w": 18,
-        "h": 7
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "min": 0,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "axisSoftMax": 1
-          },
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
       "id": 4,
       "type": "timeseries",
       "title": "Reroutes, taints and outages",
@@ -570,9 +570,9 @@
         }
       ],
       "gridPos": {
-        "x": 6,
-        "y": 17,
-        "w": 9,
+        "x": 0,
+        "y": 16,
+        "w": 12,
         "h": 8
       },
       "fieldConfig": {
@@ -634,9 +634,9 @@
         }
       ],
       "gridPos": {
-        "x": 15,
-        "y": 17,
-        "w": 9,
+        "x": 12,
+        "y": 16,
+        "w": 12,
         "h": 8
       },
       "fieldConfig": {
@@ -721,7 +721,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 24,
         "w": 12,
         "h": 10
       },
@@ -934,7 +934,7 @@
       ],
       "gridPos": {
         "x": 12,
-        "y": 25,
+        "y": 24,
         "w": 12,
         "h": 10
       },
@@ -993,7 +993,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 34,
         "w": 24,
         "h": 11
       },
