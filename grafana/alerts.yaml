@@ -1,0 +1,180 @@
+# Grafana-managed alert rules for the prod gateway, exported from
+# Alerting -> Alert rules -> folder rpc-gateway -> group prod (Export).
+#
+# Import: Alerting -> Alert rules -> More -> Import to alert rules (Grafana 11+),
+# or POST the file to /api/v1/provisioning/alert-rules with provisioning
+# headers. The contact point named in notification_settings.receiver must
+# exist first (Alerting -> Contact points; ours is a Telegram bot).
+#
+# All three rules treat "no data" as OK: an absent series means "nothing is
+# wrong", and the "Gateway not reporting" rule is the one that catches the
+# gateway going silent.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: prod
+    folder: rpc-gateway
+    interval: 1m
+    rules:
+      - uid: afxu4m0fe36yoc
+        title: No routable targets
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: grafanacloud-prom
+            model:
+              editorMode: code
+              expr: sum by (chain) (rpc_gateway_target_routable{deployment_environment="prod"})
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: C
+            queryType: expression
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: 'Chain {{ $labels.chain }} has no routable targets, clients get 503'
+        labels:
+          severity: critical
+        isPaused: false
+        notification_settings:
+          receiver: '[AllBridge] core monitor'
+      - uid: dfxu4yvm69o1se
+        title: Gateway not reporting
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: grafanacloud-prom
+            model:
+              editorMode: code
+              expr: absent(rpc_gateway_target_routable{deployment_environment="prod"})
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: C
+            queryType: expression
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 3m
+        annotations:
+          summary: 'rpc-gateway (prod) stopped sending metrics: service down or OTLP export broken'
+        labels:
+          severity: critical
+        isPaused: false
+        notification_settings:
+          receiver: '[AllBridge] core monitor'
+      - uid: bfxu5brzr7if4b
+        title: Target down for an hour
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: grafanacloud-prom
+            model:
+              editorMode: code
+              expr: rpc_gateway_target_routable{deployment_environment="prod"} == 0 and rpc_gateway_target_disabled{deployment_environment="prod"} == 0
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: C
+            queryType: expression
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 1h
+        annotations:
+          summary: '{{ $labels.chain }} / {{ $labels.target }} has been down for an hour'
+        labels:
+          severity: warning
+        isPaused: false
+        notification_settings:
+          receiver: '[AllBridge] core monitor'

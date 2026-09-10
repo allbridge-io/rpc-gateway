@@ -404,6 +404,28 @@ UI (Dashboard settings → JSON Model → copy back into the repo) so the
 dashboard stays version-controlled; the uid is fixed, so an import replaces
 the existing dashboard in place.
 
+## Alerts
+
+[grafana/alerts.yaml](grafana/alerts.yaml) holds the three Grafana-managed
+alert rules for prod (folder `rpc-gateway`, group `prod`, evaluated every
+minute), exported from the UI so they stay version-controlled next to the
+dashboard:
+
+- **No routable targets** — a chain has had no routable target for 2 minutes;
+  clients are getting 503. Critical.
+- **Gateway not reporting** — no `rpc_gateway_target_routable` series from
+  prod for 3 minutes: the service is down or the OTLP export is broken.
+  Critical.
+- **Target down for an hour** — an enabled target (not `disabled = true`) has
+  not been routable for an hour. Warning.
+
+Notifications go to the Telegram contact point named in each rule's
+`notification_settings.receiver`; create it first (Alerting → Contact
+points → Telegram, with a bot token from @BotFather and the group's chat id),
+then import the file (Alerting → Alert rules → More → Import). Metrics are
+exported once a minute, so expect a message 3–5 minutes after an outage
+starts, and a "Resolved" one when it ends.
+
 ## Layout
 
 ```
