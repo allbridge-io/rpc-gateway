@@ -90,7 +90,8 @@ func (g *Gateway) requireAPIKey(next http.Handler) http.Handler {
 		}
 		r.URL.Path = "/" + rest
 		r.URL.RawPath = ""
-		next.ServeHTTP(w, r)
+		// The proxy needs the stripped prefix back to keep upstream redirects behind the key.
+		next.ServeHTTP(w, r.WithContext(proxy.WithClientPrefix(r.Context(), "/"+key)))
 	})
 }
 
@@ -121,6 +122,8 @@ func (g *Gateway) serveChain(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// "/{api-key}/{chain}" as the client spelled it, for rewriting upstream redirects.
+	r = r.WithContext(proxy.WithClientPrefix(r.Context(), proxy.ClientPrefix(r.Context())+"/"+key))
 
 	if c.Type.PassThroughPath() {
 		// Hand the sub-path to the proxy; the target URL is completed there.

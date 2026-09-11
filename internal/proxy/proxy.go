@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -86,10 +87,11 @@ func New(opts Options, manager *Manager) (*Proxy, error) {
 		if err != nil {
 			return nil, err
 		}
+		httpTarget, _ := url.Parse(t.HTTPURL) // validated by newReverseProxies
 		// The body is owned by ReverseProxy, which copies it to the client and closes it.
-		httpProxy.ModifyResponse = p.modifyResponse(t) //nolint:bodyclose
+		httpProxy.ModifyResponse = p.modifyResponse(t, httpTarget) //nolint:bodyclose
 		httpProxy.ErrorHandler = errorHandler
-		wsProxy.ModifyResponse = p.modifyResponse(t) //nolint:bodyclose
+		wsProxy.ModifyResponse = p.modifyResponse(t, httpTarget) //nolint:bodyclose
 		wsProxy.ErrorHandler = errorHandler
 		p.targets = append(p.targets, &upstream{cfg: t, httpProxy: httpProxy, wsProxy: wsProxy})
 	}
@@ -197,11 +199,18 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // modifyResponse classifies the target's reply. Returning an error makes the
 // ReverseProxy call errorHandler instead of writing anything to the client.
-func (p *Proxy) modifyResponse(t config.Target) func(*http.Response) error {
+// A redirect is passed through, but its Location is moved back under the
+// client's /{api-key}/{chain} prefix so that following it stays authenticated.
+func (p *Proxy) modifyResponse(t config.Target, target *url.URL) func(*http.Response) error {
 	return func(resp *http.Response) error {
 		a := attemptFrom(resp.Request)
 		if a != nil {
 			a.status = resp.StatusCode
+		}
+		if loc := resp.Header.Get("Location"); loc != "" {
+			if rewritten, ok := rewriteLocation(loc, target, ClientPrefix(resp.Request.Context())); ok {
+				resp.Header.Set("Location", rewritten)
+			}
 		}
 		switch {
 		case resp.StatusCode == http.StatusSwitchingProtocols:

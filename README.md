@@ -43,6 +43,10 @@ target; the client only sees the final answer. The response header
 
 Unknown chains and routes return a JSON-RPC style error with HTTP 404. When no
 target of a chain is routable the gateway answers HTTP 503 with a JSON-RPC error.
+A redirect coming from a target is passed through, but its `Location` is moved
+back under the client's `/{api-key}/{chain}` prefix when it points into the
+target (Hiro answers `GET /` with `301 Location: /extended`; without the
+rewrite a client following it would land on `/extended` and get a 401).
 
 ### API key in the URL
 
