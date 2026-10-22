@@ -8,24 +8,32 @@ per alert and gets cut at Telegram's 4096-character limit with 20+ chains.
 Rendered example:
 
   🔴 FIRING · No routable targets (2)
-  • Chain ARB has no routable targets, clients get 503
-  • Chain AVA has no routable targets, clients get 503
-  Rule: https://<stack>.grafana.net/alerting/grafana/<uid>/view
+  • Chain ARB has no routable targets
+  • Chain AVA has no routable targets
+  Dashboard: https://<stack>.grafana.net/d/rpc-gateway?from=...&to=...&orgId=1&var-env=prod
 
-(the Rule line is omitted when there is no rule, e.g. contact point tests)
+(the Dashboard line comes from the rule's dashboard/panel link and is omitted
+when there is none, e.g. contact point tests)
 
   ✅ RESOLVED · No routable targets
   • ARB — back to normal
+
+A DatasourceError (Grafana failed to run the rule's query; only sent by rules
+whose execErrState is Error) has no chain label, so it gets its own line
+instead of the rule's summary:
+
+  🔴 FIRING · DatasourceError
+  • Grafana could not query Prometheus for rule "No routable targets" (Grafana Cloud issue, not the gateway)
 */}}
 
 {{ define "rpc.who" }}{{ with .Labels.chain }}{{ . }}{{ end }}{{ with .Labels.target }} / {{ . }}{{ end }}{{ end }}
 
-{{ define "rpc.firing" }}• {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else }}{{ template "rpc.who" . }}{{ end }}{{ end }}
+{{ define "rpc.firing" }}• {{ if eq .Labels.alertname "DatasourceError" }}Grafana could not query Prometheus for rule "{{ .Labels.rulename }}" (Grafana Cloud issue, not the gateway){{ else if .Annotations.summary }}{{ .Annotations.summary }}{{ else }}{{ template "rpc.who" . }}{{ end }}{{ end }}
 
-{{ define "rpc.resolved" }}• {{ if .Labels.chain }}{{ template "rpc.who" . }} — back to normal{{ else }}back to normal{{ end }}{{ end }}
+{{ define "rpc.resolved" }}• {{ if eq .Labels.alertname "DatasourceError" }}{{ .Labels.rulename }}: queries work again{{ else if .Labels.chain }}{{ template "rpc.who" . }} — back to normal{{ else }}back to normal{{ end }}{{ end }}
 
 {{ define "rpc.telegram" }}{{ if .Alerts.Firing }}🔴 FIRING · {{ (index .Alerts.Firing 0).Labels.alertname }}{{ if gt (len .Alerts.Firing) 1 }} ({{ len .Alerts.Firing }}){{ end }}
 {{ range .Alerts.Firing }}{{ template "rpc.firing" . }}
 {{ end }}{{ end }}{{ if .Alerts.Resolved }}✅ RESOLVED · {{ (index .Alerts.Resolved 0).Labels.alertname }}{{ if gt (len .Alerts.Resolved) 1 }} ({{ len .Alerts.Resolved }}){{ end }}
 {{ range .Alerts.Resolved }}{{ template "rpc.resolved" . }}
-{{ end }}{{ end }}{{ with (index .Alerts 0).GeneratorURL }}Rule: {{ . }}{{ end }}{{ end }}
+{{ end }}{{ end }}{{ with (index .Alerts 0).DashboardURL }}Dashboard: {{ . }}&var-env=prod{{ end }}{{ end }}

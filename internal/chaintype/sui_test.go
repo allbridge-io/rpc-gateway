@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/0xProject/rpc-gateway/internal/chaintype"
@@ -13,68 +14,82 @@ import (
 
 // config.ChainTypeSui is the config value of the Sui chain type.
 
-func TestSui_Registered(t *testing.T) {
+func TestSui_RegisteredAsPassThrough(t *testing.T) {
 	spec, ok := chaintype.Lookup(string(config.ChainTypeSui))
 	if !ok {
 		t.Fatalf("sui is not registered: %v", chaintype.Names())
 	}
-	if spec.PassThrough {
-		t.Error("sui is a single JSON-RPC endpoint; the client's sub-path must not be passed through")
+	if !spec.PassThrough {
+		t.Error("sui serves GraphQL at /graphql under the base URL: the client's sub-path must be passed through")
 	}
 	if spec.Head == nil || spec.Doc == "" {
 		t.Errorf("incomplete spec %+v", spec)
 	}
-	if config.ChainTypeSui.PassThroughPath() {
-		t.Error("config.ChainType(\"sui\").PassThroughPath() must be false")
+	if !config.ChainTypeSui.PassThroughPath() {
+		t.Error("config.ChainType(\"sui\").PassThroughPath() must be true")
 	}
 }
 
-func TestSui_Head(t *testing.T) {
+func TestSui_HeadQueriesTheLatestCheckpointOverGraphQL(t *testing.T) {
 	n := fakenode.New(t, "Sui", config.ChainTypeSui)
-	n.Set(fakenode.Behavior{Block: 379726054})
+	n.Set(fakenode.Behavior{Block: 336755149})
 
 	block, err := head(t, config.ChainTypeSui, n, map[string]string{"X-Api-Key": "k"})
-	if err != nil || block != 379726054 {
+	if err != nil || block != 336755149 {
 		t.Fatalf("head = %d, %v", block, err)
 	}
 	calls := n.Calls()
 	if len(calls) != 1 {
 		t.Fatalf("expected exactly one health call, got %+v", calls)
 	}
-	if calls[0].Method != "sui_getLatestCheckpointSequenceNumber" || calls[0].HTTPMethod != http.MethodPost {
-		t.Errorf("unexpected health call %+v", calls[0])
+	c := calls[0]
+	if c.Path != "/graphql" || c.HTTPMethod != http.MethodPost {
+		t.Errorf("the health check must be POST /graphql, got %+v", c)
 	}
-	if calls[0].Path != "/" {
-		t.Errorf("a single-endpoint type must use the target URL as-is, got path %q", calls[0].Path)
+	if !strings.Contains(c.Body, "checkpoint") || !strings.Contains(c.Body, "sequenceNumber") {
+		t.Errorf("the health check must ask for checkpoint.sequenceNumber, sent %s", c.Body)
 	}
-	if calls[0].Header.Get("X-Api-Key") != "k" {
+	if c.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("content type %q", c.Header.Get("Content-Type"))
+	}
+	if c.Header.Get("X-Api-Key") != "k" {
 		t.Error("the target's headers must be sent with the health check")
 	}
 }
 
-// Sui encodes u64 as a decimal string; the checkpoint number is already past
-// what a float64 would represent exactly, so the string form must be parsed
-// rather than run through a JSON number.
-func TestSui_HeadParsesLargeDecimalStrings(t *testing.T) {
+// QuickNode puts the token in the path (https://x.sui-mainnet.quiknode.pro/<token>/),
+// with or without a trailing slash: /graphql goes under it either way.
+func TestSui_HeadKeepsTheTargetBasePath(t *testing.T) {
 	n := fakenode.New(t, "Sui", config.ChainTypeSui)
-	n.Set(fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":"9007199254740993"}`})
+	n.Set(fakenode.Behavior{Block: 7})
+	spec, _ := chaintype.Lookup(string(config.ChainTypeSui))
 
-	block, err := head(t, config.ChainTypeSui, n, nil)
-	if err != nil || block != 9007199254740993 {
-		t.Fatalf("head = %d, %v; want 9007199254740993", block, err)
+	for _, base := range []string{n.URL() + "/abc123", n.URL() + "/abc123/"} {
+		n.ResetCalls()
+		block, err := spec.Head(context.Background(), http.DefaultClient, base, nil)
+		if err != nil || block != 7 {
+			t.Fatalf("%s: head = %d, %v", base, block, err)
+		}
+		if got := n.Calls()[0].Path; got != "/abc123/graphql" {
+			t.Errorf("%s: path = %q, want the base path kept", base, got)
+		}
 	}
 }
 
-// A provider answering with a bare JSON number instead of the documented string
-// is still understood: the number is the same, and failing the check would take
-// a working target out of rotation for a formatting detail.
-func TestSui_HeadAcceptsABareNumber(t *testing.T) {
-	n := fakenode.New(t, "Sui", config.ChainTypeSui)
-	n.Set(fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":42}`})
+// The checkpoint number is a JSON number in GraphQL. A decimal string, how Sui
+// encodes a u64 elsewhere, is the same number and must not fail the check.
+func TestSui_HeadAcceptsANumberOrADecimalString(t *testing.T) {
+	for _, body := range []string{
+		`{"data":{"checkpoint":{"sequenceNumber":336755149}}}`,
+		`{"data":{"checkpoint":{"sequenceNumber":"336755149"}}}`,
+	} {
+		n := fakenode.New(t, "Sui", config.ChainTypeSui)
+		n.Set(fakenode.Behavior{RawBody: body})
 
-	block, err := head(t, config.ChainTypeSui, n, nil)
-	if err != nil || block != 42 {
-		t.Fatalf("head = %d, %v; want 42", block, err)
+		block, err := head(t, config.ChainTypeSui, n, nil)
+		if err != nil || block != 336755149 {
+			t.Errorf("%s: head = %d, %v", body, block, err)
+		}
 	}
 }
 
@@ -84,15 +99,21 @@ func TestSui_HeadFailureKinds(t *testing.T) {
 		b       fakenode.Behavior
 		wantErr string
 	}{
-		{"http 500", fakenode.Behavior{HTTPStatus: 500}, "http status 500"},
+		{"http 500", fakenode.Behavior{HTTPStatus: 500}, "graphql checkpoint: http status 500"},
 		{"http 429", fakenode.Behavior{HTTPStatus: 429}, "http status 429"},
-		{"not json", fakenode.Behavior{RawBody: "<html>bad gateway</html>"}, "invalid json-rpc response"},
-		{"json-rpc error", fakenode.Behavior{RPCError: "Method not found"}, "Method not found"},
-		{"missing result", fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1}`}, "empty json-rpc result"},
-		{"null result", fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":null}`}, "empty json-rpc result"},
-		{"not a number", fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":"latest"}`}, "unexpected result"},
-		{"hex instead of decimal", fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":"0x10"}`}, "unexpected result"},
-		{"object instead of a number", fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":{"seq":7}}`}, "unexpected result"},
+		// What a provider that dropped JSON-RPC but has no GraphQL at this base
+		// URL answers (QuickNode's JSON-RPC root after the v1.82 upgrade).
+		{"http 404 with an empty body", fakenode.Behavior{HTTPStatus: 404, RawBody: " "}, "http status 404: empty body"},
+		{"not json", fakenode.Behavior{RawBody: "<html>bad gateway</html>"}, "invalid response"},
+		{"graphql error", fakenode.Behavior{RawBody: `{"data":null,"errors":[{"message":"Unknown field \"checkpoint\"","extensions":{"code":"GRAPHQL_VALIDATION_FAILED"}}]}`}, `graphql error: Unknown field "checkpoint"`},
+		// A JSON-RPC server answering 200 at /graphql (publicnode's deprecation notice).
+		{"json-rpc answer", fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","error":{"code":-32000,"message":"Sui JSON-RPC endpoint has been deprecated"},"id":null}`}, "no checkpoint.sequenceNumber"},
+		{"null data", fakenode.Behavior{RawBody: `{"data":null}`}, "no checkpoint.sequenceNumber"},
+		{"null checkpoint", fakenode.Behavior{RawBody: `{"data":{"checkpoint":null}}`}, "no checkpoint.sequenceNumber"},
+		{"no sequenceNumber", fakenode.Behavior{RawBody: `{"data":{"checkpoint":{}}}`}, "no checkpoint.sequenceNumber"},
+		{"not a number", fakenode.Behavior{RawBody: `{"data":{"checkpoint":{"sequenceNumber":"latest"}}}`}, "unexpected sequenceNumber"},
+		{"hex instead of decimal", fakenode.Behavior{RawBody: `{"data":{"checkpoint":{"sequenceNumber":"0x10"}}}`}, "unexpected sequenceNumber"},
+		{"negative", fakenode.Behavior{RawBody: `{"data":{"checkpoint":{"sequenceNumber":-1}}}`}, "unexpected sequenceNumber"},
 		{"dropped connection", fakenode.Behavior{Drop: true}, "connection reset|EOF"},
 	}
 	for _, tt := range tests {

@@ -125,12 +125,12 @@ http_url = "https://api.shasta.trongrid.io"
 # block goes directly under the anchor of its type.
 
 # ---- sui ----
-[chains.SUI]                # Sui testnet
+[chains.SUI]                # Sui testnet GraphQL
 type = "sui"
 max_block_lag = 100
 [[chains.SUI.targets]]
-name = "PublicNode"
-http_url = "https://sui-testnet-rpc.publicnode.com"
+name = "Mysten"
+http_url = "https://graphql.testnet.sui.io"
 
 # ---- soroban ----
 [chains.SRB]                # Stellar testnet Soroban RPC

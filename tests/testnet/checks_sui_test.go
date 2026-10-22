@@ -5,7 +5,6 @@ package testnet
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -19,48 +18,77 @@ func init() {
 	registerChecks(config.ChainTypeSui, typeChecks{
 		Verify: func(t *testing.T, e *env, key string, _ config.Chain) { testSui(t, e, key) },
 		Probe: func(t *testing.T, e *env, key string) *http.Response {
-			_, resp := e.rpc(t, "/"+key, "sui_getLatestCheckpointSequenceNumber")
+			resp, _ := suiGraphQL(t, e, "/"+key, `{ checkpoint { sequenceNumber } }`)
 			return resp
 		},
 	})
 }
 
-// suiU64 decodes a Sui u64, which the API sends as a decimal string.
-func suiU64(t *testing.T, raw json.RawMessage) uint64 {
+// suiGraphQLResp is a GraphQL answer: Sui reports a bad query as HTTP 200
+// with "errors", so the checks look at both fields.
+type suiGraphQLResp struct {
+	Data   json.RawMessage `json:"data"`
+	Errors []struct {
+		Message    string `json:"message"`
+		Extensions struct {
+			Code string `json:"code"`
+		} `json:"extensions"`
+	} `json:"errors"`
+}
+
+// suiGraphQL posts a query to /{key}/graphql and decodes the answer; a
+// transport failure or a non-200 status fails the test.
+func suiGraphQL(t *testing.T, e *env, path, query string) (*http.Response, suiGraphQLResp) {
 	t.Helper()
-	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
-		t.Fatalf("expected a decimal string, got %s", raw)
+	body, _ := json.Marshal(map[string]string{"query": query})
+	resp, data := e.do(t, http.MethodPost, path+"/graphql", body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("HTTP %d %s", resp.StatusCode, truncate(data))
 	}
-	v, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		t.Fatalf("not a decimal u64: %s", s)
+	var parsed suiGraphQLResp
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("not a GraphQL answer: %s", truncate(data))
 	}
-	return v
+	return resp, parsed
+}
+
+// suiData decodes the data of an answer that must not carry errors.
+func suiData(t *testing.T, r suiGraphQLResp, v any) {
+	t.Helper()
+	if len(r.Errors) > 0 {
+		t.Fatalf("graphql error: %s", r.Errors[0].Message)
+	}
+	if err := json.Unmarshal(r.Data, v); err != nil {
+		t.Fatalf("unexpected data %s: %v", r.Data, err)
+	}
 }
 
 func testSui(t *testing.T, e *env, key string) {
 	path := "/" + key
 
-	t.Run("sui_getChainIdentifier", func(t *testing.T) {
-		raw, resp := e.rpc(t, path, "sui_getChainIdentifier")
-		var id string
-		if err := json.Unmarshal(raw, &id); err != nil {
-			t.Fatalf("expected a string, got %s", raw)
+	t.Run("chainIdentifier", func(t *testing.T) {
+		resp, r := suiGraphQL(t, e, path, `{ chainIdentifier }`)
+		var data struct {
+			ChainIdentifier string `json:"chainIdentifier"`
 		}
-		t.Logf("%s chainIdentifier=%s provider=%s", key, id, resp.Header.Get("X-Rpc-Provider"))
-		// The identifier is the first four bytes of the genesis checkpoint
-		// digest: eight hex characters, the same for every node of a network.
-		if len(id) != 8 {
-			t.Errorf("chain identifier %q is not 8 hex characters", id)
-		}
-		if _, err := strconv.ParseUint(id, 16, 64); err != nil {
-			t.Errorf("chain identifier %q is not hexadecimal", id)
+		suiData(t, r, &data)
+		t.Logf("%s chainIdentifier=%s provider=%s", key, data.ChainIdentifier, resp.Header.Get("X-Rpc-Provider"))
+		// The Base58 digest of the genesis checkpoint: 32 bytes, 43-44 characters.
+		if n := len(data.ChainIdentifier); n < 43 || n > 44 {
+			t.Errorf("chain identifier %q is not a Base58 digest", data.ChainIdentifier)
 		}
 	})
 
-	t.Run("sui_getLatestCheckpointSequenceNumber", func(t *testing.T) {
-		seq := suiU64(t, mustRaw(e.rpc(t, path, "sui_getLatestCheckpointSequenceNumber")))
+	t.Run("latest checkpoint", func(t *testing.T) {
+		_, r := suiGraphQL(t, e, path, `{ checkpoint { sequenceNumber timestamp } }`)
+		var data struct {
+			Checkpoint struct {
+				SequenceNumber uint64 `json:"sequenceNumber"`
+				Timestamp      string `json:"timestamp"`
+			} `json:"checkpoint"`
+		}
+		suiData(t, r, &data)
+		seq := data.Checkpoint.SequenceNumber
 		if seq == 0 {
 			t.Fatal("checkpoint sequence number is zero")
 		}
@@ -70,7 +98,7 @@ func testSui(t *testing.T, e *env, key string) {
 				checked = s.BlockNumber
 			}
 		}
-		t.Logf("%s checkpoint=%d health-check checkpoint=%d", key, seq, checked)
+		t.Logf("%s checkpoint=%d at %s health-check checkpoint=%d", key, seq, data.Checkpoint.Timestamp, checked)
 		// Checkpoints come every ~250ms, so a health round some seconds old is
 		// still within a few hundred of the live value.
 		if diff := absDiff(seq, checked); diff > 2000 {
@@ -78,33 +106,31 @@ func testSui(t *testing.T, e *env, key string) {
 		}
 	})
 
-	t.Run("suix_getReferenceGasPrice", func(t *testing.T) {
-		if price := suiU64(t, mustRaw(e.rpc(t, path, "suix_getReferenceGasPrice"))); price == 0 {
-			t.Error("reference gas price is zero")
+	t.Run("reference gas price", func(t *testing.T) {
+		_, r := suiGraphQL(t, e, path, `{ epoch { epochId referenceGasPrice } }`)
+		var data struct {
+			Epoch struct {
+				EpochID           uint64 `json:"epochId"`
+				ReferenceGasPrice string `json:"referenceGasPrice"`
+			} `json:"epoch"`
+		}
+		suiData(t, r, &data)
+		if data.Epoch.ReferenceGasPrice == "" || data.Epoch.ReferenceGasPrice == "0" {
+			t.Errorf("reference gas price is %q in epoch %d", data.Epoch.ReferenceGasPrice, data.Epoch.EpochID)
 		}
 	})
 
 	t.Run("client error passed through", func(t *testing.T) {
-		// A malformed object id is the client's mistake: Sui answers HTTP 200
-		// with a JSON-RPC error, which must reach the client as-is instead of
-		// being turned into a 503 or rerouted to another provider.
+		// An unknown field is the client's mistake: Sui answers HTTP 200 with a
+		// GraphQL validation error, which must reach the client as-is instead
+		// of being turned into a 503 or rerouted to another provider.
 		before := len(e.rec.Of(events.KindRerouted, ""))
-		body, _ := json.Marshal(map[string]any{
-			"jsonrpc": "2.0", "id": 1, "method": "sui_getObject", "params": []any{"not-an-object-id"},
-		})
-		resp, data := e.do(t, http.MethodPost, path, body)
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("HTTP %d %s", resp.StatusCode, truncate(data))
+		_, r := suiGraphQL(t, e, path, `{ notAField }`)
+		if len(r.Errors) == 0 {
+			t.Fatalf("expected a GraphQL error for an unknown field, got data %s", r.Data)
 		}
-		var parsed rpcResp
-		if err := json.Unmarshal(data, &parsed); err != nil {
-			t.Fatalf("not JSON-RPC: %s", truncate(data))
-		}
-		if parsed.Error == nil {
-			t.Fatalf("expected a JSON-RPC error for a malformed object id, got %s", truncate(data))
-		}
-		if !strings.Contains(strings.ToLower(parsed.Error.Message), "invalid params") {
-			t.Errorf("unexpected error %d: %s", parsed.Error.Code, parsed.Error.Message)
+		if !strings.Contains(r.Errors[0].Message, "notAField") {
+			t.Errorf("unexpected error %s: %s", r.Errors[0].Extensions.Code, r.Errors[0].Message)
 		}
 		if after := len(e.rec.Of(events.KindRerouted, "")); after != before {
 			t.Errorf("a client error must not cause a reroute: %d new reroutes", after-before)
@@ -113,7 +139,7 @@ func testSui(t *testing.T, e *env, key string) {
 
 	t.Run("repeated requests stay on healthy targets", func(t *testing.T) {
 		for i := 0; i < 5; i++ {
-			e.rpc(t, path, "sui_getLatestCheckpointSequenceNumber")
+			suiGraphQL(t, e, path, `{ checkpoint { sequenceNumber } }`)
 		}
 	})
 }

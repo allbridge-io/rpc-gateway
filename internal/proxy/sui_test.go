@@ -15,9 +15,9 @@ import (
 
 // config.ChainTypeSui is the config value of the Sui chain type.
 
-// suiEchoBody is a request the fake node does not simulate, so the answer names
-// the node that served it.
-const suiEchoBody = `{"jsonrpc":"2.0","id":7,"method":"suix_getAllBalances","params":["0x2"]}`
+// suiEchoQuery is a GraphQL request the fake node does not simulate, so the
+// answer is an echo naming the node that served it.
+const suiEchoQuery = `{"query":"{ object(address: \"0x2\") { version } }"}`
 
 func newSuiProxy(t *testing.T, targets []config.Target, exceptions []config.Exception, taint time.Duration) *testProxy {
 	t.Helper()
@@ -41,9 +41,14 @@ func newSuiProxy(t *testing.T, targets []config.Target, exceptions []config.Exce
 	return &testProxy{Proxy: px, rec: rec, clock: clock}
 }
 
+// suiGraphQL sends a GraphQL query to the sub-path the router hands to the proxy.
+func suiGraphQL(p http.Handler, body string) *httptest.ResponseRecorder {
+	return horizonRequest(p, http.MethodPost, "/graphql", body)
+}
+
 func TestSui_HealthCheckUsesTheLatestCheckpoint(t *testing.T) {
-	n := fakenode.New(t, "PublicNode", config.ChainTypeSui)
-	n.Set(fakenode.Behavior{Block: 379726054})
+	n := fakenode.New(t, "QuickNode", config.ChainTypeSui)
+	n.Set(fakenode.Behavior{Block: 336755149})
 	target := n.Target()
 	target.Headers = map[string]string{"X-Api-Key": "secret-key"}
 	m := NewManager("SUI", config.ChainTypeSui, []config.Target{target}, defaultOpts(), nil)
@@ -51,13 +56,13 @@ func TestSui_HealthCheckUsesTheLatestCheckpoint(t *testing.T) {
 	m.RunOnce(context.Background())
 
 	calls := n.Calls()
-	if len(calls) != 1 || calls[0].Method != "sui_getLatestCheckpointSequenceNumber" || calls[0].HTTPMethod != http.MethodPost {
-		t.Fatalf("expected one POST sui_getLatestCheckpointSequenceNumber, got %+v", calls)
+	if len(calls) != 1 || calls[0].Path != "/graphql" || calls[0].HTTPMethod != http.MethodPost {
+		t.Fatalf("expected one POST /graphql, got %+v", calls)
 	}
 	if calls[0].Header.Get("X-Api-Key") != "secret-key" {
 		t.Error("health check must send the target's headers (API key)")
 	}
-	if st := m.Status()[0]; !st.Routable || st.BlockNumber != 379726054 {
+	if st := m.Status()[0]; !st.Routable || st.BlockNumber != 336755149 {
 		t.Errorf("status: %+v", st)
 	}
 }
@@ -70,14 +75,14 @@ func TestSui_HealthCheckFailures(t *testing.T) {
 	}{
 		{"http 503", fakenode.Behavior{HTTPStatus: 503}, "http status 503"},
 		{"rate limited", fakenode.Behavior{HTTPStatus: 429}, "http status 429"},
-		{"not json", fakenode.Behavior{RawBody: "<html>"}, "invalid json-rpc response"},
-		{"json-rpc error", fakenode.Behavior{RPCError: "Method not found"}, "Method not found"},
-		{"result is not a number", fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":"latest"}`}, "unexpected result"},
+		{"json-rpc only (404)", fakenode.Behavior{HTTPStatus: 404, RawBody: " "}, "http status 404"},
+		{"not json", fakenode.Behavior{RawBody: "<html>"}, "invalid response"},
+		{"graphql error", fakenode.Behavior{RawBody: `{"data":null,"errors":[{"message":"Internal error"}]}`}, "graphql error: Internal error"},
 		{"dropped connection", fakenode.Behavior{Drop: true}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			n := fakenode.New(t, "PublicNode", config.ChainTypeSui)
+			n := fakenode.New(t, "QuickNode", config.ChainTypeSui)
 			n.Set(tt.b)
 			m := NewManager("SUI", config.ChainTypeSui, targetsOf(n), defaultOpts(), nil)
 
@@ -99,8 +104,8 @@ func TestSui_HealthCheckFailures(t *testing.T) {
 func TestSui_CheckpointLagBetweenNodes(t *testing.T) {
 	a := fakenode.New(t, "A", config.ChainTypeSui)
 	b := fakenode.New(t, "B", config.ChainTypeSui)
-	a.Set(fakenode.Behavior{Block: 379726054})
-	b.Set(fakenode.Behavior{Block: 379725054})
+	a.Set(fakenode.Behavior{Block: 336755149})
+	b.Set(fakenode.Behavior{Block: 336754149})
 	opts := defaultOpts()
 	opts.MaxBlockLag = 100
 	m := NewManager("SUI", config.ChainTypeSui, targetsOf(a, b), opts, nil)
@@ -113,45 +118,43 @@ func TestSui_CheckpointLagBetweenNodes(t *testing.T) {
 	}
 }
 
-func TestSui_JSONRPCForwardedVerbatim(t *testing.T) {
-	n := fakenode.New(t, "PublicNode", config.ChainTypeSui)
+func TestSui_GraphQLForwardedVerbatim(t *testing.T) {
+	n := fakenode.New(t, "QuickNode", config.ChainTypeSui)
 	p := newSuiProxy(t, targetsOf(n), nil, 0)
 
-	rr := post(p, suiEchoBody, nil)
+	rr := suiGraphQL(p, suiEchoQuery)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
-	if got := answeredBy(t, rr); got != "PublicNode" {
-		t.Errorf("answered by %q", got)
+	echo := decodeHorizonEcho(t, rr)
+	if echo.Node != "QuickNode" || echo.Path != "/graphql" || echo.HTTPMethod != http.MethodPost || echo.Body != suiEchoQuery {
+		t.Errorf("query not forwarded verbatim to /graphql: %+v", echo)
 	}
-	if rr.Header().Get("X-Rpc-Provider") != "PublicNode" {
+	if rr.Header().Get("X-Rpc-Provider") != "QuickNode" {
 		t.Error("provider header missing")
 	}
-	call := n.Calls()[0]
-	if call.Body != suiEchoBody || call.HTTPMethod != http.MethodPost {
-		t.Errorf("body not forwarded verbatim: %+v", call)
-	}
-	// A single-endpoint type ignores the client's path: the target URL is used
-	// as configured (providers put API keys in it).
-	if call.Path != "/" {
-		t.Errorf("path = %q, want the target URL used as-is", call.Path)
-	}
-	if ev := p.rec.Of(events.KindUpstreamRequest, "PublicNode"); len(ev) != 1 || ev[0].Method != "suix_getAllBalances" {
-		t.Errorf("upstream event should name the JSON-RPC method: %+v", ev)
+	if ev := p.rec.Of(events.KindUpstreamRequest, "QuickNode"); len(ev) != 1 || ev[0].Method != "POST /graphql" {
+		t.Errorf("upstream event should name the HTTP method and path: %+v", ev)
 	}
 }
 
-func TestSui_TargetURLPathIsKept(t *testing.T) {
+// QuickNode keeps the token in the path: the client's sub-path goes under it,
+// and so does the bare chain root (JSON-RPC clients posting to /SUI keep
+// reaching whatever the provider still serves there).
+func TestSui_TargetBasePathIsKept(t *testing.T) {
 	n := fakenode.New(t, "Keyed", config.ChainTypeSui)
 	target := n.Target()
-	target.HTTPURL = n.URL() + "/v1/abc123"
+	target.HTTPURL = n.URL() + "/abc123/"
 	p := newSuiProxy(t, []config.Target{target}, nil, 0)
 
-	if rr := post(p, suiEchoBody, nil); rr.Code != http.StatusOK {
-		t.Fatalf("%d %s", rr.Code, rr.Body.String())
-	}
-	if got := n.Calls()[0].Path; got != "/v1/abc123" {
-		t.Errorf("path = %q, want the target's own path (it may carry the API key)", got)
+	for path, want := range map[string]string{"/graphql": "/abc123/graphql", "/": "/abc123/"} {
+		rr := horizonRequest(p, http.MethodPost, path, suiEchoQuery)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, rr.Code, rr.Body.String())
+		}
+		if got := decodeHorizonEcho(t, rr).Path; got != want {
+			t.Errorf("%s: path = %q, want %q (the target's own path may carry the API key)", path, got, want)
+		}
 	}
 }
 
@@ -161,7 +164,7 @@ func TestSui_HeadersInjectedAndOverrideClient(t *testing.T) {
 	target.Headers = map[string]string{"X-Api-Key": "server-key"}
 	p := newSuiProxy(t, []config.Target{target}, nil, 0)
 
-	req := httptest.NewRequest(http.MethodPost, "/SUI", strings.NewReader(suiEchoBody))
+	req := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(suiEchoQuery))
 	req.Header.Set("X-Api-Key", "client-key") // must not leak through
 	rr := httptest.NewRecorder()
 	p.ServeHTTP(rr, req)
@@ -171,20 +174,19 @@ func TestSui_HeadersInjectedAndOverrideClient(t *testing.T) {
 	}
 }
 
-// Sui reports a bad request from the client as a JSON-RPC error or, for an
-// unknown object, inside the result. Neither says anything about the node, so
-// both must reach the client untouched.
+// GraphQL reports a bad query from the client as HTTP 200 with "errors" (or a
+// 400 for a body that is not a GraphQL request at all). Neither says anything
+// about the node, so both must reach the client untouched.
 func TestSui_ClientErrorsPassThrough(t *testing.T) {
+	const validation = `{"data":null,"errors":[{"message":"Unknown field \"nope\" on type \"Query\".","extensions":{"code":"GRAPHQL_VALIDATION_FAILED"}}]}`
 	tests := []struct {
 		name string
-		body string
 		b    fakenode.Behavior
 		want string
 	}{
-		{"invalid params", suiEchoBody, fakenode.Behavior{RPCError: "Invalid params: AccountAddressParseError"}, "AccountAddressParseError"},
-		{"unknown object", `{"jsonrpc":"2.0","id":1,"method":"sui_getObject","params":["0xdeadbeef"]}`, fakenode.Behavior{}, `"notExists"`},
-		{"http 400", suiEchoBody, fakenode.Behavior{HTTPStatus: 400}, "upstream error 400"},
-		{"http 404", suiEchoBody, fakenode.Behavior{HTTPStatus: 404}, "upstream error 404"},
+		{"graphql validation error", fakenode.Behavior{RawBody: validation}, "GRAPHQL_VALIDATION_FAILED"},
+		{"http 400", fakenode.Behavior{HTTPStatus: 400}, "upstream error 400"},
+		{"http 404", fakenode.Behavior{HTTPStatus: 404}, "upstream error 404"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -195,7 +197,7 @@ func TestSui_ClientErrorsPassThrough(t *testing.T) {
 
 			sawBad := false
 			for i := 0; i < 20 && !sawBad; i++ {
-				rr := post(p, tt.body, nil)
+				rr := suiGraphQL(p, suiEchoQuery)
 				if rr.Header().Get("X-Rpc-Provider") != "Bad" {
 					continue
 				}
@@ -220,7 +222,7 @@ func TestSui_NodeSideFailuresFailOver(t *testing.T) {
 		b         fakenode.Behavior
 		wantTaint bool
 	}{
-		{"exception in the body", fakenode.Behavior{RPCError: "Transient error"}, false},
+		{"exception in the body", fakenode.Behavior{RawBody: `{"data":null,"errors":[{"message":"Transient error"}]}`}, false},
 		{"http 502", fakenode.Behavior{HTTPStatus: 502}, true},
 		{"http 429", fakenode.Behavior{HTTPStatus: 429}, true},
 		{"http 403 (bad api key)", fakenode.Behavior{HTTPStatus: 403}, false},
@@ -235,8 +237,8 @@ func TestSui_NodeSideFailuresFailOver(t *testing.T) {
 			p := newSuiProxy(t, targetsOf(bad, good), exceptions, 10*time.Second)
 
 			for i := 0; i < 20 && bad.CallCount("") == 0; i++ {
-				rr := post(p, suiEchoBody, nil)
-				if rr.Code != http.StatusOK || answeredBy(t, rr) != "Good" {
+				rr := suiGraphQL(p, suiEchoQuery)
+				if rr.Code != http.StatusOK || decodeHorizonEcho(t, rr).Node != "Good" {
 					t.Fatalf("request %d: %d %s", i, rr.Code, rr.Body.String())
 				}
 			}
@@ -250,7 +252,7 @@ func TestSui_NodeSideFailuresFailOver(t *testing.T) {
 				t.Errorf("tainted = %v, want %v", got, tt.wantTaint)
 			}
 			for _, c := range good.Calls() {
-				if c.Body != suiEchoBody {
+				if c.Body != suiEchoQuery || c.Path != "/graphql" {
 					t.Errorf("replayed request corrupted: %+v", c)
 				}
 			}
@@ -275,8 +277,8 @@ func TestSui_UpstreamTimeoutFailsOver(t *testing.T) {
 
 	start := time.Now()
 	for i := 0; i < 20 && slow.CallCount("") == 0; i++ {
-		rr := post(px, suiEchoBody, nil)
-		if rr.Code != http.StatusOK || answeredBy(t, rr) != "Good" {
+		rr := suiGraphQL(px, suiEchoQuery)
+		if rr.Code != http.StatusOK || decodeHorizonEcho(t, rr).Node != "Good" {
 			t.Fatalf("%d %s", rr.Code, rr.Body.String())
 		}
 	}

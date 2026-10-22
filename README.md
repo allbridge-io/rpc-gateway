@@ -37,7 +37,7 @@ target; the client only sees the final answer. The response header
 |---|---|
 | `POST /{chain}` | JSON-RPC request for the chain (key is case-insensitive, e.g. `/SPL`, `/sol`) |
 | `GET /{chain}` + `Upgrade: websocket` | WebSocket, proxied to the target's `ws_url` (Solana subscriptions) |
-| `ANY /{chain}/{path}` | pass-through chain types only (`tron`, `horizon`, `ton`, `stacks`): the method, path and query are forwarded to the target (`/TRX/wallet/getnowblock`, `/TON/api/v3/masterchainInfo`, `/STX/v2/info`) |
+| `ANY /{chain}/{path}` | pass-through chain types only (`tron`, `sui`, `horizon`, `ton`, `stacks`): the method, path and query are forwarded to the target (`/TRX/wallet/getnowblock`, `/SUI/graphql`, `/TON/api/v3/masterchainInfo`, `/STX/v2/info`) |
 | `GET /status` | JSON snapshot of every chain and target: routable, block number, lag, taint, last error |
 | `GET /healthz` | Liveness: `{"healthy":true}` whenever the process is up (never depends on upstreams) |
 
@@ -79,7 +79,7 @@ the gateway warns about it at startup.
 | `evm` | `eth_blockNumber` | ignored; the target URL is used as-is (API keys often live there) | any EVM network; `chain_id` is verified by the testnet suite |
 | `solana` | `getSlot` | ignored | WebSocket goes to `ws_url` (defaults to `http_url` with ws scheme) |
 | `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API (`/wallet/*`, `/walletsolidity/*`, `/v1/*`) and the EVM-dialect `POST /jsonrpc`, all under one prefix; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
-| `sui` | `sui_getLatestCheckpointSequenceNumber` | ignored | Sui JSON-RPC; the checkpoint sequence number plays the role of the block number (u64 as a decimal string) |
+| `sui` | `POST /graphql` → `checkpoint.sequenceNumber` | appended to the target base URL together with the query | Sui GraphQL RPC at `/SUI/graphql` (Sui removed JSON-RPC from the full node in v1.82); `http_url` is the base that serves `/graphql`, e.g. a QuickNode endpoint with its token path; the checkpoint sequence number plays the role of the block number |
 | `soroban` | `getHealth` | ignored | Stellar Soroban RPC; `getHealth` carries `latestLedger` and the server's own verdict, while `getLatestLedger` now ships the whole ledger meta |
 | `horizon` | `GET /` → `history_latest_ledger` | appended to the target base URL together with the query | Stellar Horizon REST API; its `problem+json` 4xx (unknown or malformed account) is a client error and passes through |
 | `ton` | `GET /api/v3/masterchainInfo` (`last.seqno`) | appended to the target base URL together with the query | toncenter: the v3 REST API and `POST /api/v2/jsonRPC`; API key via `headers = { "X-API-Key" = "..." }` |
@@ -430,12 +430,30 @@ then import the file (Alerting → Alert rules → More → Import). Metrics are
 exported once a minute, so expect a message 3–5 minutes after an outage
 starts, and a "Resolved" one when it ends.
 
+When Grafana itself fails to run a rule's query (its ruler timing out
+against the Grafana Cloud Prometheus, which happens in bursts and has nothing
+to do with the gateway), the rule keeps its last state: "Alert state if
+execution error or timeout" is **Keep Last State** (`execErrState: KeepLast`)
+in every rule. With the default **Error** each such blip became a
+`DatasourceError` message ("Chain [no value] has no routable targets"). The
+failures still show up in the rule's History tab.
+
+Each rule is linked to a dashboard panel (Routable targets per chain for
+"No routable targets", Targets for the other two), so messages carry a link
+to the dashboard at the time of the alert.
+
 Messages use the template in
 [grafana/telegram-message.tmpl](grafana/telegram-message.tmpl) (Alerting →
 Notification configuration → Templates, name `rpc-gateway-telegram`; the
 contact point's Message is `{{ template "rpc.telegram" . }}`, parse mode
 None): one header line per notification, one line per chain or target, and
-a link to the rule, instead of Grafana's default dump of every label.
+a dashboard link, instead of Grafana's default dump of every label. A
+`DatasourceError` gets its own line naming the rule rather than the rule's
+summary with an empty chain.
+
+Edits made in the Grafana UI should be exported back into these files
+(rule group → More → Export, and the template's text), or the next import
+will undo them.
 
 ## Layout
 

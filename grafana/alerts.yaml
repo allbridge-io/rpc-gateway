@@ -9,6 +9,14 @@
 # All three rules treat "no data" as OK: an absent series means "nothing is
 # wrong", and the "Gateway not reporting" rule is the one that catches the
 # gateway going silent.
+#
+# A failed query (Grafana Cloud's ruler timing out against its own
+# Prometheus) keeps the rule's last state (execErrState: KeepLast) instead of
+# firing a DatasourceError: those blips say nothing about the gateway and used
+# to page Telegram with "Chain [no value] has no routable targets".
+#
+# Each rule is linked to a panel of the rpc-gateway dashboard
+# (dashboardUid/panelId), which puts a "Dashboard:" link in notifications.
 apiVersion: 1
 groups:
   - orgId: 1
@@ -60,11 +68,15 @@ groups:
               maxDataPoints: 43200
               refId: C
               type: threshold
+        dashboardUid: rpc-gateway
+        panelId: 2
         noDataState: OK
-        execErrState: Error
+        execErrState: KeepLast
         for: 2m
         annotations:
-          summary: 'Chain {{ $labels.chain }} has no routable targets, clients get 503'
+          __dashboardUid__: rpc-gateway
+          __panelId__: "2"
+          summary: 'Chain {{ $labels.chain }} has no routable targets'
         labels:
           severity: critical
         isPaused: false
@@ -114,10 +126,14 @@ groups:
               maxDataPoints: 43200
               refId: C
               type: threshold
+        dashboardUid: rpc-gateway
+        panelId: 1
         noDataState: OK
-        execErrState: Error
+        execErrState: KeepLast
         for: 3m
         annotations:
+          __dashboardUid__: rpc-gateway
+          __panelId__: "1"
           summary: 'rpc-gateway (prod) stopped sending metrics: service down or OTLP export broken'
         labels:
           severity: critical
@@ -168,10 +184,14 @@ groups:
               maxDataPoints: 43200
               refId: C
               type: threshold
+        dashboardUid: rpc-gateway
+        panelId: 1
         noDataState: OK
-        execErrState: Error
+        execErrState: KeepLast
         for: 1h
         annotations:
+          __dashboardUid__: rpc-gateway
+          __panelId__: "1"
           summary: '{{ $labels.chain }} / {{ $labels.target }} has been down for an hour'
         labels:
           severity: warning
