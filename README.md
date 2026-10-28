@@ -78,7 +78,7 @@ the gateway warns about it at startup.
 |---|---|---|---|
 | `evm` | `eth_blockNumber` | ignored; the target URL is used as-is (API keys often live there) | any EVM network; `chain_id` is verified by the testnet suite |
 | `solana` | `getSlot` | ignored | WebSocket goes to `ws_url` (defaults to `http_url` with ws scheme) |
-| `tron` | `POST /wallet/getnowblock` | appended to the target base URL together with the query | Full Tron HTTP API (`/wallet/*`, `/walletsolidity/*`, `/v1/*`) and the EVM-dialect `POST /jsonrpc`, all under one prefix; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
+| `tron` | `POST /wallet/getblock` `{"detail":false}` (header only; `getnowblock` sends the whole block, 0.5–1 MB on mainnet) | appended to the target base URL together with the query | Full Tron HTTP API (`/wallet/*`, `/walletsolidity/*`, `/v1/*`) and the EVM-dialect `POST /jsonrpc`, all under one prefix; `TronWeb` can use `https://gateway/TRX` as `fullHost` |
 | `sui` | `POST /graphql` → `checkpoint.sequenceNumber` | appended to the target base URL together with the query | Sui GraphQL RPC at `/SUI/graphql` (Sui removed JSON-RPC from the full node in v1.82); `http_url` is the base that serves `/graphql`, e.g. a QuickNode endpoint with its token path; the checkpoint sequence number plays the role of the block number |
 | `soroban` | `getHealth` | ignored | Stellar Soroban RPC; `getHealth` carries `latestLedger` and the server's own verdict, while `getLatestLedger` now ships the whole ledger meta |
 | `horizon` | `GET /` → `history_latest_ledger` | appended to the target base URL together with the query | Stellar Horizon REST API; its `problem+json` 4xx (unknown or malformed account) is a client error and passes through |
@@ -195,13 +195,24 @@ type = "tron"
 name = "TronGrid"
 http_url = "https://api.shasta.trongrid.io"                  # base URL
 headers = { "TRON-PRO-API-KEY" = "${TRONGRID_KEY}" }
+# healthcheck_timeout = "8s"   # this target only; overrides healthchecks.timeout
+# upstream_timeout = "10s"     # this target only; overrides server.upstream_timeout
 ```
+
+`healthcheck_timeout` and `upstream_timeout` on a target are for a provider
+that is reliably slower than the rest (for example one far from the gateway's
+region): it gets more time while every other target keeps the global limits,
+so a hanging fast provider is still noticed and failed over quickly. A
+`healthcheck_timeout` longer than `healthchecks.interval` makes the rounds of
+that chain as long as the timeout, and an `upstream_timeout` longer than
+`server.write_timeout` is cut short by it.
 
 Rules the loader enforces at startup (a violation is a fatal error with a
 readable message): at least one chain and one target per chain, chain keys
 made of `[A-Za-z0-9_-]` and unique ignoring case, target names unique per
 chain, `http_url` with `http(s)://`, `ws_url` with `ws(s)://`, positive
-durations, thresholds ≥ 1, `api_keys` entries of at least 16 characters
+durations (a target's `healthcheck_timeout`/`upstream_timeout` included:
+leave them out to inherit the global value), thresholds ≥ 1, `api_keys` entries of at least 16 characters
 from `[A-Za-z0-9_.~-]` (one URL segment, no encoding needed anywhere) and
 distinct, no unknown keys (a typo such as `prot` fails instead of silently
 falling back to a default). Explicit zero values of

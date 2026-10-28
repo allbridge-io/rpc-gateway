@@ -494,3 +494,29 @@ func TestManager_ConcurrentUse(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// A target's own healthcheck_timeout replaces the global one for that target
+// only, so one provider far from the gateway does not flap while the others
+// keep the tight limit.
+func TestManager_TargetHealthCheckTimeoutOverride(t *testing.T) {
+	patient := 2 * time.Second
+	far := fakenode.New(t, "Far", config.ChainTypeEVM)
+	near := fakenode.New(t, "Near", config.ChainTypeEVM)
+	far.Set(fakenode.Behavior{Block: 100, Latency: 300 * time.Millisecond})
+	near.Set(fakenode.Behavior{Block: 100, Latency: 300 * time.Millisecond})
+	farTarget := far.Target()
+	farTarget.HealthCheckTimeout = &patient
+	opts := defaultOpts()
+	opts.Timeout = 100 * time.Millisecond
+	m := NewManager("SPL", config.ChainTypeEVM, []config.Target{farTarget, near.Target()}, opts, nil)
+
+	m.RunOnce(context.Background())
+
+	st := m.Status()
+	if !st[0].Routable || st[0].BlockNumber != 100 {
+		t.Errorf("Far must pass within its own 2s: %+v", st[0])
+	}
+	if st[1].Routable || !strings.Contains(st[1].LastError, "deadline exceeded") {
+		t.Errorf("Near must still fail on the global 100ms: %+v", st[1])
+	}
+}

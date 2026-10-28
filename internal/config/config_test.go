@@ -347,6 +347,10 @@ func TestLoad_Invalid(t *testing.T) {
 		{"api key with space", "[server]\napi_keys = [\"abcdefgh abcdefghij\"]\n" + minimalTOML, "path segment"},
 		{"api key empty", "[server]\napi_keys = [\"\"]\n" + minimalTOML, "APIKeys"},
 		{"api key repeated", "[server]\napi_keys = [\"0123456789abcdef\", \"0123456789abcdef\"]\n" + minimalTOML, "repeats"},
+		{"target healthcheck_timeout zero", minimalTOML + "healthcheck_timeout = \"0s\"\n", "healthcheck_timeout must be positive"},
+		{"target healthcheck_timeout negative", minimalTOML + "healthcheck_timeout = \"-1s\"\n", "healthcheck_timeout must be positive"},
+		{"target upstream_timeout zero", minimalTOML + "upstream_timeout = \"0s\"\n", "upstream_timeout must be positive"},
+		{"target healthcheck_timeout not a duration", minimalTOML + "healthcheck_timeout = \"soon\"\n", "TOML"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -404,6 +408,43 @@ func TestLoad_ExplicitZeroUsesDefault(t *testing.T) {
 	}
 	if got := cfg.MaxBlockLagFor("SPL"); got != 0 {
 		t.Errorf("a chain without its own max_block_lag must inherit the disabled global one, got %d", got)
+	}
+}
+
+// A provider far from the gateway's region gets more time of its own, while
+// every other target keeps the global limits.
+func TestLoad_TargetTimeoutOverrides(t *testing.T) {
+	cfg := mustLoad(t, LoadOptions{ConfigPath: writeFile(t, "c.toml", `
+[server]
+upstream_timeout = "5s"
+[healthchecks]
+timeout = "3s"
+[chains.TRX_W]
+type = "tron"
+[[chains.TRX_W.targets]]
+name = "Slow"
+http_url = "https://slow.example"
+healthcheck_timeout = "8s"
+upstream_timeout = "12s"
+[[chains.TRX_W.targets]]
+name = "Default"
+http_url = "https://default.example"
+`)})
+	slow, def := cfg.Chains["TRX_W"].Targets[0], cfg.Chains["TRX_W"].Targets[1]
+	if got := slow.HealthCheckTimeoutOr(cfg.HealthChecks.Timeout); got != 8*time.Second {
+		t.Errorf("slow healthcheck timeout = %v, want 8s", got)
+	}
+	if got := slow.UpstreamTimeoutOr(cfg.Server.UpstreamTimeout); got != 12*time.Second {
+		t.Errorf("slow upstream timeout = %v, want 12s", got)
+	}
+	if def.HealthCheckTimeout != nil || def.UpstreamTimeout != nil {
+		t.Errorf("unset overrides must stay nil: %+v", def)
+	}
+	if got := def.HealthCheckTimeoutOr(cfg.HealthChecks.Timeout); got != 3*time.Second {
+		t.Errorf("default healthcheck timeout = %v, want the global 3s", got)
+	}
+	if got := def.UpstreamTimeoutOr(cfg.Server.UpstreamTimeout); got != 5*time.Second {
+		t.Errorf("default upstream timeout = %v, want the global 5s", got)
 	}
 }
 

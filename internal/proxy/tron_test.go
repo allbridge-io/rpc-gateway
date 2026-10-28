@@ -36,7 +36,7 @@ func newTronProxy(t *testing.T, targets []config.Target, exceptions []config.Exc
 	return &testProxy{Proxy: px, rec: rec, clock: clock}
 }
 
-// tronEcho is what fakenode returns for any non-getnowblock Tron path.
+// tronEcho is what fakenode returns for any Tron path it does not simulate.
 type tronEcho struct {
 	Node       string `json:"node"`
 	HTTPMethod string `json:"httpMethod"`
@@ -63,7 +63,7 @@ func decodeEcho(t *testing.T, rr *httptest.ResponseRecorder) tronEcho {
 	return e
 }
 
-func TestTron_HealthCheckUsesGetNowBlock(t *testing.T) {
+func TestTron_HealthCheckUsesHeaderOnlyGetBlock(t *testing.T) {
 	n := fakenode.New(t, "Grid", config.ChainTypeTron)
 	n.Set(fakenode.Behavior{Block: 68000000})
 	target := n.Target()
@@ -73,8 +73,8 @@ func TestTron_HealthCheckUsesGetNowBlock(t *testing.T) {
 	m.RunOnce(context.Background())
 
 	calls := n.Calls()
-	if len(calls) != 1 || calls[0].Path != "/wallet/getnowblock" || calls[0].HTTPMethod != http.MethodPost {
-		t.Fatalf("expected one POST /wallet/getnowblock, got %+v", calls)
+	if len(calls) != 1 || calls[0].Path != "/wallet/getblock" || calls[0].HTTPMethod != http.MethodPost || calls[0].Body != `{"detail":false}` {
+		t.Fatalf("expected one POST /wallet/getblock {\"detail\":false}, got %+v", calls)
 	}
 	if calls[0].Header.Get("TRON-PRO-API-KEY") != "secret-key" {
 		t.Error("health check must send the target's headers (API key)")

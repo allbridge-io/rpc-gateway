@@ -107,7 +107,9 @@ func TestHead_Tron(t *testing.T) {
 		t.Fatalf("head = %d, %v", block, err)
 	}
 	call := n.Calls()[0]
-	if call.Path != "/wallet/getnowblock" || call.HTTPMethod != http.MethodPost {
+	// The header-only getblock: getnowblock carries every transaction of the
+	// block, 0.5-1 MB on mainnet, which slow providers fail to deliver in time.
+	if call.Path != "/wallet/getblock" || call.HTTPMethod != http.MethodPost || call.Body != `{"detail":false}` {
 		t.Errorf("unexpected health call %+v", call)
 	}
 	if call.Header.Get("TRON-PRO-API-KEY") != "k" {
@@ -125,7 +127,7 @@ func TestHead_TronKeepsTheTargetBasePath(t *testing.T) {
 	if _, err := spec.Head(context.Background(), http.DefaultClient, n.URL()+"/base", nil); err != nil {
 		t.Fatalf("head: %v", err)
 	}
-	if got := n.Calls()[0].Path; got != "/base/wallet/getnowblock" {
+	if got := n.Calls()[0].Path; got != "/base/wallet/getblock" {
 		t.Errorf("path = %q, want the base path kept", got)
 	}
 }
@@ -142,7 +144,7 @@ func TestHead_FailureKinds(t *testing.T) {
 		{"evm json-rpc error", config.ChainTypeEVM, fakenode.Behavior{RPCError: "boom"}, "boom"},
 		{"evm not hex", config.ChainTypeEVM, fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":"0xzz"}`}, "invalid hex"},
 		{"solana wrong type", config.ChainTypeSolana, fakenode.Behavior{RawBody: `{"jsonrpc":"2.0","id":1,"result":"x"}`}, "getSlot: unexpected result"},
-		{"tron error body", config.ChainTypeTron, fakenode.Behavior{TronError: "OutOfMemoryError"}, "getnowblock: OutOfMemoryError"},
+		{"tron error body", config.ChainTypeTron, fakenode.Behavior{TronError: "OutOfMemoryError"}, "getblock: OutOfMemoryError"},
 		{"tron no block number", config.ChainTypeTron, fakenode.Behavior{RawBody: `{"blockID":"x"}`}, "no block number"},
 		{"tron dropped connection", config.ChainTypeTron, fakenode.Behavior{Drop: true}, "connection reset|EOF"},
 	}

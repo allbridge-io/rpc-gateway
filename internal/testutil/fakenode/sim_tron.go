@@ -14,7 +14,9 @@ func init() {
 	RegisterSim(config.ChainTypeTron, tronSim)
 }
 
-// tronSim mimics the Tron HTTP API: /wallet/getnowblock returns a block,
+// tronSim mimics the Tron HTTP API: /wallet/getnowblock and /wallet/getblock
+// return the latest block (getblock only when asked for the header alone, which
+// is all the simulation has),
 // /jsonrpc speaks the EVM dialect, and any other path echoes the request so
 // tests can see what reached the node. Tron reports most failures with HTTP 200
 // and an "Error" field or a result code, which Behavior can produce for any path.
@@ -38,7 +40,8 @@ func tronSim(n *Node, r *http.Request, b Behavior, rpcMethod, body string) (any,
 		return RPCResult(body, result), true
 	// A suffix match, so a target URL with a base path (a provider prefix or an
 	// API key path) is simulated like the real node behind it.
-	case strings.HasSuffix(path, "/wallet/getnowblock"), strings.HasSuffix(path, "/walletsolidity/getnowblock"):
+	case strings.HasSuffix(path, "/wallet/getnowblock"), strings.HasSuffix(path, "/walletsolidity/getnowblock"),
+		strings.HasSuffix(path, "/wallet/getblock") && strings.Contains(body, `"detail":false`):
 		return map[string]any{
 			"blockID":      fmt.Sprintf("%064x", b.Block),
 			"block_header": map[string]any{"raw_data": map[string]any{"number": b.Block, "timestamp": time.Now().UnixMilli()}},

@@ -236,6 +236,47 @@ func TestProxy_SlowButWithinTimeoutIsNotAFailure(t *testing.T) {
 	}
 }
 
+// A target's own upstream_timeout replaces the global one for that target
+// only: the slow provider is waited for, a fast one hanging still fails over
+// on the global limit.
+func TestProxy_TargetUpstreamTimeoutOverride(t *testing.T) {
+	patient := 2 * time.Second
+	slow := fakenode.New(t, "Slow", config.ChainTypeEVM)
+	slow.Set(fakenode.Behavior{Latency: 300 * time.Millisecond})
+	slowTarget := slow.Target()
+	slowTarget.UpstreamTimeout = &patient
+	p := newTestProxy(t, proxyParams{targets: []config.Target{slowTarget}, upstreamTimeout: 100 * time.Millisecond})
+
+	rr := post(p, rpcBody, nil)
+	if rr.Code != http.StatusOK || answeredBy(t, rr) != "Slow" {
+		t.Fatalf("the target's 2s must apply instead of the global 100ms: %d %s", rr.Code, rr.Body.String())
+	}
+	if len(p.rec.Of(events.KindRerouted, "")) != 0 {
+		t.Error("no reroute expected within the target's own timeout")
+	}
+
+	short := 100 * time.Millisecond
+	hang := fakenode.New(t, "Hang", config.ChainTypeEVM)
+	hang.Set(fakenode.Behavior{Hang: true})
+	hangTarget := hang.Target()
+	hangTarget.UpstreamTimeout = &short
+	good := fakenode.New(t, "Good", config.ChainTypeEVM)
+	p = newTestProxy(t, proxyParams{targets: []config.Target{hangTarget, good.Target()}, upstreamTimeout: 5 * time.Second, taint: time.Second})
+
+	start := time.Now()
+	for i := 0; i < 20 && hang.CallCount("") == 0; i++ {
+		if rr := post(p, rpcBody, nil); rr.Code != http.StatusOK || answeredBy(t, rr) != "Good" {
+			t.Fatalf("request %d: %d %s", i, rr.Code, rr.Body.String())
+		}
+	}
+	if hang.CallCount("") == 0 {
+		t.Fatal("Hang was never selected")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("a shorter target timeout must fail over before the global 5s, took %v", elapsed)
+	}
+}
+
 func TestProxy_ExceptionMatchReroutesWithoutTaint(t *testing.T) {
 	bad := fakenode.New(t, "Bad", config.ChainTypeEVM)
 	bad.Set(fakenode.Behavior{RPCError: "Blockhash not found"})

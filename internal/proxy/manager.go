@@ -17,7 +17,7 @@ import (
 // HealthOptions configures a Manager.
 type HealthOptions struct {
 	Interval         time.Duration
-	Timeout          time.Duration
+	Timeout          time.Duration // per check, for targets without their own healthcheck_timeout
 	FailureThreshold uint
 	SuccessThreshold uint
 	// MaxBlockLag marks a target unhealthy when it is more than this many blocks
@@ -104,7 +104,10 @@ func NewManager(chain string, typ config.ChainType, targets []config.Target, opt
 		opts.Now = time.Now
 	}
 	if opts.Client == nil {
-		opts.Client = &http.Client{Timeout: opts.Timeout}
+		// No client-wide Timeout: it would cap a target's own, longer
+		// healthcheck_timeout. Every check runs under a context deadline,
+		// which bounds the response body as well as the headers.
+		opts.Client = &http.Client{}
 	}
 	if opts.FailureThreshold == 0 {
 		opts.FailureThreshold = 1
@@ -172,7 +175,7 @@ func (m *Manager) RunOnce(ctx context.Context) {
 		wg.Add(1)
 		go func(i int, t *targetState) {
 			defer wg.Done()
-			cctx, cancel := context.WithTimeout(ctx, m.opts.Timeout)
+			cctx, cancel := context.WithTimeout(ctx, t.cfg.HealthCheckTimeoutOr(m.opts.Timeout))
 			defer cancel()
 			block, err := m.head(cctx, t.cfg)
 			results[i] = checkResult{block: block, err: err}

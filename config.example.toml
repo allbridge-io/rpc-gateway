@@ -150,6 +150,8 @@ match = "BLOCK_UNSOLIDIFIED"
 [[chains.TRX.targets]]
 name = "TronGrid"
 http_url = "https://api.shasta.trongrid.io"   # base URL, the client's path is appended
+# healthcheck_timeout = "8s"   # this target only (a provider far from the gateway); overrides healthchecks.timeout
+# upstream_timeout = "10s"     # this target only; overrides server.upstream_timeout
 # headers = { "TRON-PRO-API-KEY" = "${TRONGRID_KEY}" }  # TronGrid rate limits without a key
 
 # ============================== Solana ==============================

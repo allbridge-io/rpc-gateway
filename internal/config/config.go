@@ -87,7 +87,7 @@ const MinAPIKeyLength = 16
 func (s Server) AuthEnabled() bool { return len(s.APIKeys) > 0 }
 
 // HealthChecks holds the defaults of the background health checker. A chain may
-// override MaxBlockLag.
+// override MaxBlockLag, a target its own Timeout (healthcheck_timeout).
 type HealthChecks struct {
 	// Interval between two checks of the same target.
 	Interval time.Duration `toml:"interval" default:"5s" validate:"gt=0"`
@@ -168,6 +168,31 @@ type Target struct {
 	DisableKeepAlives bool `toml:"disable_keep_alives"`
 	// Disabled excludes the target from routing without removing it from the file.
 	Disabled bool `toml:"disabled"`
+	// HealthCheckTimeout overrides healthchecks.timeout for this target only, for
+	// a provider that is reliably slower than the rest (far from the gateway's
+	// region) without loosening the checks of every other target. Unset = global.
+	HealthCheckTimeout *time.Duration `toml:"healthcheck_timeout"`
+	// UpstreamTimeout overrides server.upstream_timeout for this target only.
+	// Unset = global.
+	UpstreamTimeout *time.Duration `toml:"upstream_timeout"`
+}
+
+// HealthCheckTimeoutOr returns the target's own health check timeout, or def
+// when it has none.
+func (t Target) HealthCheckTimeoutOr(def time.Duration) time.Duration {
+	if t.HealthCheckTimeout != nil {
+		return *t.HealthCheckTimeout
+	}
+	return def
+}
+
+// UpstreamTimeoutOr returns the target's own upstream timeout, or def when it
+// has none.
+func (t Target) UpstreamTimeoutOr(def time.Duration) time.Duration {
+	if t.UpstreamTimeout != nil {
+		return *t.UpstreamTimeout
+	}
+	return def
 }
 
 var chainKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
@@ -296,6 +321,13 @@ func validateSemantics(c *Config) error {
 				return fmt.Errorf("chain %q: target names %q and %q are duplicates", key, prev, t.Name)
 			}
 			seenTargets[tl] = t.Name
+
+			if t.HealthCheckTimeout != nil && *t.HealthCheckTimeout <= 0 {
+				return fmt.Errorf("chain %q, target %q: healthcheck_timeout must be positive; leave it out to use healthchecks.timeout", key, t.Name)
+			}
+			if t.UpstreamTimeout != nil && *t.UpstreamTimeout <= 0 {
+				return fmt.Errorf("chain %q, target %q: upstream_timeout must be positive; leave it out to use server.upstream_timeout", key, t.Name)
+			}
 		}
 	}
 	return nil

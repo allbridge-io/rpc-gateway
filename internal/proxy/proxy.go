@@ -29,7 +29,7 @@ type Options struct {
 	Type            config.ChainType
 	Targets         []config.Target
 	Exceptions      []config.Exception
-	UpstreamTimeout time.Duration
+	UpstreamTimeout time.Duration // for targets without their own upstream_timeout
 	MaxBodyBytes    int64
 	Observer        events.Observer
 }
@@ -83,7 +83,7 @@ func New(opts Options, manager *Manager) (*Proxy, error) {
 	}
 	p := &Proxy{opts: opts, manager: manager, observer: opts.Observer, redact: newRedactor(opts.Targets)}
 	for _, t := range opts.Targets {
-		httpProxy, wsProxy, err := newReverseProxies(t, opts.Type, opts.UpstreamTimeout)
+		httpProxy, wsProxy, err := newReverseProxies(t, opts.Type, t.UpstreamTimeoutOr(opts.UpstreamTimeout))
 		if err != nil {
 			return nil, err
 		}
