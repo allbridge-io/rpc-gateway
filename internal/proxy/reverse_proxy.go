@@ -49,6 +49,7 @@ func newReverseProxies(t config.Target, typ config.ChainType, upstreamTimeout ti
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		ResponseHeaderTimeout: upstreamTimeout,
+		HTTP2:                 http2WithPings(),
 	}
 
 	passThrough := typ.PassThroughPath()

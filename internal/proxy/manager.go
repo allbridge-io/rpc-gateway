@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -104,10 +105,7 @@ func NewManager(chain string, typ config.ChainType, targets []config.Target, opt
 		opts.Now = time.Now
 	}
 	if opts.Client == nil {
-		// No client-wide Timeout: it would cap a target's own, longer
-		// healthcheck_timeout. Every check runs under a context deadline,
-		// which bounds the response body as well as the headers.
-		opts.Client = &http.Client{}
+		opts.Client = newHealthCheckClient()
 	}
 	if opts.FailureThreshold == 0 {
 		opts.FailureThreshold = 1
@@ -177,7 +175,14 @@ func (m *Manager) RunOnce(ctx context.Context) {
 			defer wg.Done()
 			cctx, cancel := context.WithTimeout(ctx, t.cfg.HealthCheckTimeoutOr(m.opts.Timeout))
 			defer cancel()
+			cctx, conn := withConnTrace(cctx)
 			block, err := m.head(cctx, t.cfg)
+			if err != nil && errors.Is(err, context.DeadlineExceeded) {
+				// A check that ran out of time: say whether it hung on a pooled
+				// connection or on a fresh one, which tells a dead connection
+				// from a provider that does not answer.
+				err = conn.annotate(err)
+			}
 			results[i] = checkResult{block: block, err: err}
 		}(i, t)
 	}

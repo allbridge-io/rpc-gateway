@@ -159,7 +159,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		t := p.targets[idx]
 
 		a := &attempt{}
-		req := r.Clone(context.WithValue(r.Context(), attemptKey{}, a))
+		ctx, conn := withConnTrace(context.WithValue(r.Context(), attemptKey{}, a))
+		req := r.Clone(ctx)
 		if !isWS {
 			data, compressed, err := body.forTarget(t.cfg)
 			if err != nil {
@@ -181,6 +182,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			t.httpProxy.ServeHTTP(w, req)
 		}
 		a.err = p.redact.Error(a.err) // never let a target URL (API key) reach logs or status
+		var ue *upstreamError
+		if a.err != nil && !errors.As(a.err, &ue) && !errors.Is(a.err, context.Canceled) {
+			// A transport failure (timeout, reset, dial error): say which
+			// connection it happened on, pooled or fresh.
+			a.err = conn.annotate(a.err)
+		}
 		p.observer.UpstreamRequest(p.opts.Chain, t.cfg.Name, method, a.status, time.Since(start), a.err)
 
 		if a.err == nil {
