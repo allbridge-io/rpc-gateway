@@ -363,20 +363,30 @@ What is exported ([internal/telemetry](internal/telemetry)):
   filterable in Loki. Health changes, taints, reroutes and "no healthy
   targets" are all `info`/`warn`/`error`; per-request lines stay at `debug`.
 - **Metrics** (attributes `chain`, `target`): `rpc_gateway.upstream.requests`
-  and `rpc_gateway.upstream.duration` (+ `method`, `outcome`),
+  (+ `method`, `outcome`) and `rpc_gateway.upstream.duration` (+ `outcome`),
   `rpc_gateway.reroutes`, `rpc_gateway.target.taints`,
   `rpc_gateway.target.health_changes`, `rpc_gateway.no_healthy_targets`,
   and gauges `rpc_gateway.target.routable`, `rpc_gateway.target.disabled`,
-  `rpc_gateway.target.block_number`, `rpc_gateway.target.lag`. Pass-through
-  paths are cut to two segments in `method` and id-looking segments become
-  `{id}`, so addresses, hashes and ledger numbers never become label values.
-  Expect a few thousand series in total: the latency histogram alone is
-  eleven buckets per chain × target × method × outcome (about 3k with ~20
-  chains), everything else is a few hundred. That is under half of the
-  free tier's 10k active series; if it ever gets close, drop `method` from
-  the histogram in code rather than letting Grafana's Adaptive Metrics
-  aggregate labels away at ingestion, where the loss is invisible to readers
-  of this repo.
+  `rpc_gateway.target.block_number`, `rpc_gateway.target.lag`.
+
+  The `method` label is built only from values that cannot grow without
+  bound: JSON-RPC names that are plain identifiers (else `other`),
+  pass-through paths cut to two segments with id-looking or non-word
+  segments as `{id}`, and any path the target rejected with a 4xx (other than
+  429) as `VERB {client_error}`. Addresses, hashes, ledger numbers and
+  whatever a scanner probes (`/accounts/169.254.169.254`, `/etc/passwd`)
+  never become label values. This matters because the SDK keeps every label
+  set it has seen until the process restarts, so each new value is an active
+  series for good.
+
+  `method` is deliberately not on the duration histogram: a histogram is 13
+  series (11 buckets, sum, count) per label set, and with `method` it alone
+  reached ~6.5k of the free tier's 10k active series (Nov 2026, ~500
+  chain × target × method × outcome sets). Without it the whole export is
+  under 2k series. Per-method rates and errors come from the counter; for a
+  per-method latency question use the debug log. Do not let Grafana's
+  Adaptive Metrics aggregate labels away at ingestion instead: the loss is
+  invisible to readers of this repo.
 
 Export failures (wrong token, endpoint down) are logged to stdout as
 `export error` and never affect request handling; the SDK batches and

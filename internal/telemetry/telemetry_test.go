@@ -365,18 +365,82 @@ func TestExportFailureIsReportedNotFatal(t *testing.T) {
 }
 
 func TestNormalizeMethod(t *testing.T) {
-	tests := map[string]string{
-		"eth_call":                 "eth_call",
-		"":                         "unknown",
-		"POST /wallet/getnowblock": "POST /wallet/getnowblock",
-		"GET /v1/accounts/TAbc123/transactions?x=1": "GET /v1/accounts",
-		"POST /":       "POST /",
-		"GET /jsonrpc": "GET /jsonrpc",
+	tests := []struct {
+		method string
+		status int
+		want   string
+	}{
+		{"eth_call", 200, "eth_call"},
+		{"getAccountInfo", 200, "getAccountInfo"},
+		{"", 200, "unknown"},
+		{"eth_call'--", 200, "other"},
+		{"$(sleep 5)", 200, "other"},
+		{strings.Repeat("a", 65), 200, "other"},
+		{"POST /wallet/getnowblock", 200, "POST /wallet/getnowblock"},
+		{"GET /v1/accounts/TAbc123/transactions", 200, "GET /v1/accounts"},
+		{"POST /", 200, "POST /"},
+		{"GET /jsonrpc", 200, "GET /jsonrpc"},
+		{"GET /fee_stats", 200, "GET /fee_stats"},
+		{"GET /ledgers/4501679", 200, "GET /ledgers/{id}"},
+		{"POST /sui.rpc.v2.LedgerService/GetEpoch", 200, "POST /{id}/GetEpoch"},
+		// Stellar strkeys: mixed, and the all-letter zero account.
+		{"GET /accounts/GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H", 200, "GET /accounts/{id}"},
+		{"GET /accounts/GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF", 200, "GET /accounts/{id}"},
+		// What a scanner sends: never a label value of its own.
+		{"GET /accounts/'", 200, "GET /accounts/{id}"},
+		{"GET /accounts/$(sleep 5)", 500, "GET /accounts/{id}"},
+		{"GET /accounts/http:", 502, "GET /accounts/{id}"},
+		{"GET /accounts/0x0", 200, "GET /accounts/{id}"},
+		{"GET /accounts/ZZZ", 400, "GET {client_error}"},
+		{"GET /accounts/169.254.169.254", 404, "GET {client_error}"},
+		{"GET /etc/passwd", 404, "GET {client_error}"},
+		{"PROPFIND /", 405, "OTHER {client_error}"},
+		{"BREW /pot", 200, "OTHER /pot"},
+		// 429 is the target's rate limit, not a verdict on the path.
+		{"GET /fee_stats", 429, "GET /fee_stats"},
+		// A 4xx on JSON-RPC says nothing about the method name.
+		{"eth_call", 400, "eth_call"},
 	}
-	for in, want := range tests {
-		if got := NormalizeMethod(in); got != want {
-			t.Errorf("NormalizeMethod(%q) = %q, want %q", in, got, want)
+	for _, tt := range tests {
+		if got := NormalizeMethod(tt.method, tt.status); got != tt.want {
+			t.Errorf("NormalizeMethod(%q, %d) = %q, want %q", tt.method, tt.status, got, tt.want)
 		}
+	}
+}
+
+// The duration histogram costs 13 series per label set; it must not carry
+// method, or the stack's active series grow with every method seen.
+func TestDurationHistogramHasNoMethod(t *testing.T) {
+	tel, c, _ := setupWithCollector(t)
+	m, err := tel.Metrics(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{"eth_call", "eth_getLogs", "eth_blockNumber"} {
+		m.UpstreamRequest("SPL", "Alchemy", method, 200, 20*time.Millisecond, nil)
+	}
+	if err := tel.ForceFlush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var sets []string
+	for _, req := range c.metrics {
+		for _, rm := range req.ResourceMetrics {
+			for _, sm := range rm.ScopeMetrics {
+				for _, mt := range sm.Metrics {
+					if mt.Name == "rpc_gateway.upstream.duration" {
+						sets = sets[:0]
+						for _, p := range mt.GetHistogram().GetDataPoints() {
+							sets = append(sets, attrKey(p.Attributes))
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(sets) != 1 || sets[0] != "chain=SPL;outcome=ok;target=Alchemy;" {
+		t.Errorf("duration label sets = %v, want one without method", sets)
 	}
 }
 

@@ -33,7 +33,7 @@ type SnapshotFunc func() []TargetSnapshot
 // Instruments (all with attributes chain and target where they apply):
 //
 //	rpc_gateway.upstream.requests   counter    + method, outcome (ok|error)
-//	rpc_gateway.upstream.duration   histogram  seconds, + method, outcome
+//	rpc_gateway.upstream.duration   histogram  seconds, + outcome (no method: see UpstreamRequest)
 //	rpc_gateway.reroutes            counter    a request failed on target and was retried elsewhere
 //	rpc_gateway.no_healthy_targets  counter    per chain
 //	rpc_gateway.target.taints       counter
@@ -169,36 +169,66 @@ func (m *Metrics) NoHealthyTargets(chain string, _ int) {
 	m.noHealthy.Add(context.Background(), 1, metric.WithAttributes(attribute.String("chain", chain)))
 }
 
-func (m *Metrics) UpstreamRequest(chain, target, method string, _ int, duration time.Duration, err error) {
+// UpstreamRequest counts the attempt per method and records its duration per
+// target only. The histogram is 13 series (11 buckets, sum, count) per label
+// set, so a method label there multiplied the whole stack's active series by
+// the number of methods seen; per-method rates stay on the counter.
+func (m *Metrics) UpstreamRequest(chain, target, method string, status int, duration time.Duration, err error) {
 	outcome := "ok"
 	if err != nil {
 		outcome = "error"
 	}
-	attrs := metric.WithAttributes(
-		attribute.String("chain", chain),
-		attribute.String("target", target),
-		attribute.String("method", NormalizeMethod(method)),
-		attribute.String("outcome", outcome),
-	)
+	chainAttr, targetAttr, outcomeAttr := attribute.String("chain", chain), attribute.String("target", target), attribute.String("outcome", outcome)
 	ctx := context.Background()
-	m.requests.Add(ctx, 1, attrs)
-	m.duration.Record(ctx, duration.Seconds(), attrs)
+	m.requests.Add(ctx, 1, metric.WithAttributes(chainAttr, targetAttr,
+		attribute.String("method", NormalizeMethod(method, status)), outcomeAttr))
+	m.duration.Record(ctx, duration.Seconds(), metric.WithAttributes(chainAttr, targetAttr, outcomeAttr))
 }
 
-// NormalizeMethod keeps the method attribute low-cardinality. JSON-RPC method
-// names are used as-is. HTTP paths (pass-through chains) are cut to
-// "VERB /seg1/seg2" and any id-looking segment (all digits, or a long token
-// with digits: hashes, addresses, ledger numbers) becomes "{id}", so
-// /accounts/GABC..., /ledgers/4501679 or /v2/accounts/<addr> never create one
-// series per account.
-func NormalizeMethod(method string) string {
+// Placeholders NormalizeMethod substitutes for values a client controls.
+const (
+	methodUnknown     = "unknown"        // no JSON-RPC method and no path
+	methodOther       = "other"          // a JSON-RPC method name that is not an identifier
+	verbOther         = "OTHER"          // a non-standard HTTP verb
+	pathClientError   = "{client_error}" // the target rejected the path (4xx other than 429)
+	segmentIdentifier = "{id}"
+)
+
+// NormalizeMethod keeps the method attribute low-cardinality: every value it
+// returns is either from a small fixed set or something a target accepted.
+//
+//   - JSON-RPC method names are used as-is when they look like identifiers
+//     (letters, digits, underscore, at most 64 characters), "other" otherwise.
+//   - HTTP paths (pass-through chains) are cut to "VERB /seg1/seg2"; any
+//     id-looking segment (all digits, or a long token with digits: hashes,
+//     addresses, ledger numbers) or segment that is not a plain word becomes
+//     "{id}", so /accounts/GABC..., /ledgers/4501679 or /v2/accounts/<addr>
+//     never create one series per account.
+//   - A path the target answered with a client error (4xx other than 429) is
+//     reported as "VERB {client_error}": such paths are whatever the client
+//     typed (scanners probe /accounts/169.254.169.254, /etc/passwd...), and
+//     each distinct one would otherwise stay an active series until restart.
+func NormalizeMethod(method string, status int) string {
+	// The proxy builds "VERB /path" for non-JSON-RPC requests; a JSON-RPC
+	// method name with a space in it is still a method name.
 	verb, path, isPath := strings.Cut(method, " ")
-	if !isPath {
-		if method == "" {
-			return "unknown"
+	if !isPath || !strings.HasPrefix(path, "/") {
+		switch {
+		case method == "":
+			return methodUnknown
+		case isIdentifier(method):
+			return method
+		default:
+			return methodOther
 		}
-		return method
 	}
+	if !standardVerbs[verb] {
+		verb = verbOther
+	}
+	if status >= 400 && status < 500 && status != 429 {
+		return verb + " " + pathClientError
+	}
+	path, _, _ = strings.Cut(path, "?")
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segments) > 2 {
 		segments = segments[:2]
@@ -207,26 +237,65 @@ func NormalizeMethod(method string) string {
 		return verb + " /"
 	}
 	for i, seg := range segments {
-		if looksLikeID(seg) {
-			segments[i] = "{id}"
+		if looksLikeID(seg) || !isWord(seg) {
+			segments[i] = segmentIdentifier
 		}
 	}
 	return fmt.Sprintf("%s /%s", verb, strings.Join(segments, "/"))
 }
 
-// looksLikeID is deliberately simple: purely numeric segments, or long
-// segments that mix letters and digits (hex hashes, base58/base32 addresses,
-// Stellar strkeys). Short versioned segments such as "v2" stay as they are.
+var standardVerbs = map[string]bool{
+	"GET": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true, "HEAD": true, "OPTIONS": true,
+}
+
+// isIdentifier: a JSON-RPC method name such as eth_getLogs or getAccountInfo.
+func isIdentifier(s string) bool {
+	if len(s) > 64 || !isLetter(rune(s[0])) {
+		return false
+	}
+	for _, r := range s {
+		if !isLetter(r) && !isDigit(r) && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// isWord: a path segment such as fee_stats, strict-send, v2 or
+// sui.rpc.v2.LedgerService. Anything with quotes, colons, spaces, $ or ` is
+// not one, and neither is anything longer than 64 characters.
+func isWord(s string) bool {
+	if s == "" || len(s) > 64 || !isLetter(rune(s[0])) {
+		return false
+	}
+	for _, r := range s {
+		if !isLetter(r) && !isDigit(r) && r != '_' && r != '-' && r != '.' {
+			return false
+		}
+	}
+	return true
+}
+
+func isLetter(r rune) bool { return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') }
+func isDigit(r rune) bool  { return r >= '0' && r <= '9' }
+
+// looksLikeID is deliberately simple: purely numeric segments, long segments
+// that mix letters and digits (hex hashes, base58/base32 addresses, Stellar
+// strkeys), and anything of 32 characters or more (an all-letter strkey such as
+// GAAA...WHF). Short versioned segments such as "v2" stay as they are.
 func looksLikeID(seg string) bool {
 	if seg == "" {
 		return false
 	}
+	if len(seg) >= 32 {
+		return true
+	}
 	digits, letters := 0, 0
 	for _, r := range seg {
 		switch {
-		case r >= '0' && r <= '9':
+		case isDigit(r):
 			digits++
-		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+		case isLetter(r):
 			letters++
 		}
 	}
